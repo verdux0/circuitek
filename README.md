@@ -284,6 +284,3 @@ En la consola: `window.__glitch` → `loadSample()`, `getState()`, `setState(s)`
 ## Créditos
 
 Interfaz y modelo de pines inspirados en Glitchy Camera de elayabharath (glitchycam.com). La idea de corromper solo los datos de escaneo del JPEG viene de jpg-glitch (snorpey, MIT). Todo el código de este proyecto está escrito desde cero.
-#   g l i t c h - e d i t o r 
- 
- 

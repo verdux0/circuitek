@@ -7,12 +7,14 @@
     "build": "tsc --noEmit && vite build",
     "build:single": "tsc --noEmit && vite build --mode single",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev:phone": "vite --host --mode phone"
   },
-  "license": "ISC",
+  "license": "MIT",
   "devDependencies": {
     "@types/omggif": "^1.0.5",
     "@types/sortablejs": "^1.15.9",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
     "typescript": "^7.0.2",
     "vite": "^6.4.6",
     "vite-plugin-singlefile": "^2.3.4",

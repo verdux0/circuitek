@@ -1,5 +1,22 @@
+# dependencies and builds
 node_modules/
 dist/
 dist-single/
+
+# local HTTPS certificates (dev:phone / any self-signed cert)
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+.cert/
+certs/
+
+# environment / editor / OS
+.env
+.env.*
 *.log
 __pycache__/
+.DS_Store
+Thumbs.db
