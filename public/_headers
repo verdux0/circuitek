@@ -1,0 +1,23 @@
+# Response headers for Cloudflare Pages and Netlify (both read this file from the root of
+# the published folder; GitHub Pages ignores it). See docs/DESPLIEGUE.md.
+
+# Vite fingerprints everything in /assets/ (name-HASH.ext): a new build means new names,
+# so these files can be cached for a year without ever going stale.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The page itself is always revalidated, so a new deploy is picked up immediately.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+
+# Basic hardening for an app that runs entirely in the browser.
+# No COOP/COEP on purpose: nothing needs SharedArrayBuffer, and COEP would block the
+# GifCities thumbnails. Workers are inlined (blob:) and module scripts get the right
+# Content-Type from both hosts by extension, so no extra header is needed for them.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=()

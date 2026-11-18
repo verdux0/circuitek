@@ -1,0 +1,7 @@
+# Cloudflare Pages configuration (see docs/DESPLIEGUE.md).
+# Pages reads the output folder from here; the build command (`npm run build`) is set in
+# the dashboard (Settings → Builds), not in this file. While this file exists, the fields
+# it defines become read-only in the dashboard.
+name = "glitch-editor"
+pages_build_output_dir = "./dist"
+compatibility_date = "2026-11-18"
