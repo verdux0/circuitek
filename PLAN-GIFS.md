@@ -1,0 +1,43 @@
+# PLAN-GIFS — buscador GifCities + repo listo para GitHub Pages y el móvil
+
+## Punto de partida
+- Los GIF animados **ya se aceptan** como entrada (capa de vídeo/GIF, `src/media/player.ts`: `ImageDecoder`, con `omggif`
+  donde no existe). No hay nada que resolver antes.
+- La importación (`importFiles`) acepta `File`/`Blob`: un GIF descargado entra por el mismo camino que uno arrastrado.
+
+## Investigación real (18-11-2026, Chrome + curl desde fuera de gifcities.org)
+| Endpoint | Qué devuelve | CORS | Notas |
+|---|---|---|---|
+| `https://gifcities.org/search?q=…&offset=N&page_size=M` | **HTML** renderizado en servidor (Starlette + Elasticsearch): `<a href="web.archive.org/…"><img width height src="https://blob.gifcities.org/gifcities/<CHECKSUM>.gif">`, «page X of Y» | **No** | Es la búsqueda nueva: paginada, con filtro NSFW (`nsfw=maximum` por defecto) y búsqueda semántica. El navegador no deja leerla desde otro origen. |
+| `https://gifcities.org/api/v1/gifs` | 404 | — | No existe (la fuente de terceros acertaba en esto). |
+| `https://gifcities.archive.org/api/v1/gifsearch?q=…&limit=N` | **JSON**: `[{url_text, weight, gif, checksum, width, height, page}]` | **Sí** (refleja el `Origin`; probado con Pages, localhost, IP de la LAN y `null`) | La API original de 2016. Sin paginación en servidor (ignora `page`/`offset`/`page_size`; solo `limit`). Devuelve todos los resultados (2566 para «computer», 785 KB; con `limit=200`, 65 KB). Algunos traen `checksum: "-"` (sin imagen). **No filtra contenido adulto.** Sin documentar. |
+| `https://blob.gifcities.org/gifcities/<CHECKSUM>.gif` | El GIF (`image/gif`) | **Sí** (`Access-Control-Allow-Origin: *`; GET simple, sin preflight) | `fetch` funciona desde cualquier origen → se pueden leer los píxeles (textura WebGL). |
+
+Código: `internetarchive/gifcities` (AGPL-3.0) es la app de servidor (Python + plantillas Jinja + Packery). No hay un
+cliente JavaScript que reutilizar, y meter código AGPL obligaría a toda la app a ser AGPL. **Cliente propio mínimo.** Se
+anota en THIRD-PARTY.md como servicio usado, no como código reutilizado.
+
+## Decisiones (confirmadas por el usuario)
+- **Fuente:** la API JSON con CORS, sin desenfoque de miniaturas, con aviso de que no filtra contenido adulto y de los
+  derechos. Botón de **flujo manual** (abrir gifcities.org y arrastrar/pegar el GIF) como respaldo si la API cae.
+  Sin proxy ni infraestructura.
+- **Paginación:** se pide `limit=300` y se muestran 48 cada vez («Cargar más»). Si se agotan y la API devolvió el máximo,
+  se pide de nuevo con un `limit` mayor (hasta 1200), sin repetir resultados.
+- **Privacidad:** ninguna petición al cargar ni al abrir el panel; la primera sale al buscar. `fetch` con
+  `credentials: 'omit'` y `referrerPolicy: 'no-referrer'`, miniaturas con `referrerpolicy="no-referrer"`. Solo se envía
+  el texto buscado. Sin cookies ni analytics.
+- **Seguridad:** solo `https:` y dominios esperados (`gifcities.archive.org`, `blob.gifcities.org`,
+  `web.archive.org`). Checksum en base32 de 32 caracteres. Descarga con tope de 10 MB (cortada en streaming), timeout,
+  firma `GIF8`, ≤ 600 fotogramas y ≤ 2048 px de lado. Nunca `innerHTML` con datos remotos: DOM con `textContent` y atributos.
+- **Licencia:** MIT (`LICENSE`, `package.json`).
+
+## Parte 2
+- `git fetch`: `origin/main` = `e0b1249`, que ya es antepasado de `main` (11 commits por delante, 0 por detrás) → push normal,
+  sin force-push.
+- `.gitignore` (+ certificados), `LICENSE`, `THIRD-PARTY.md` al día.
+- `.github/workflows/pages.yml`: `npm ci`, `tsc`, `npm test`, `npm run build`, `upload-pages-artifact` + `deploy-pages`,
+  permisos mínimos. Vite ya usa `base: './'` (rutas relativas): se comprueba sirviendo `dist` bajo `/glitch-editor/`.
+- `dev:phone`: `vite --host` + HTTPS con `@vitejs/plugin-basic-ssl` (se comprueba la compatibilidad con Vite 6.4).
+- `README-MOVIL.md` no existe en el proyecto: la sección «Usarlo en el teléfono» se escribe desde cero contra el proyecto
+  real, y se marca «no comprobado» lo que necesite un dispositivo físico.
+- Activar Pages (Settings → Pages → Source: GitHub Actions) lo hace el usuario: `gh` no está instalado aquí.
