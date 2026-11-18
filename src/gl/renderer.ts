@@ -1,6 +1,7 @@
 import { COMP_FRAG, FRAG, LAYER_FRAG, LAYER_VERT, VERT } from './shaders';
 import { buildGpuPasses, encParams, encSeed, type EncParams, type GlitchState, type GpuPass } from '../model';
 import { BLENDS, layerMatrix, type DocState, type Layer } from '../doc';
+import { frameSeed } from '../media/timing';
 
 /**
  * WebGL2 layer compositor + glitch chain.
@@ -36,6 +37,10 @@ interface SourceTex {
   tex: WebGLTexture;
   bytes: number;
   used: number;
+  /** Dynamic sources: frame currently in the texture, and its size. */
+  frame?: number;
+  w?: number;
+  h?: number;
 }
 interface CacheEntry extends Target {
   key: string;
@@ -54,6 +59,15 @@ export interface SourceRef {
   load(): TexImageSource;
   w: number;
   h: number;
+  /**
+   * Dynamic sources (video / GIF): index of the frame `load()` returns now. The texture under
+   * `key` is kept and re-uploaded only when this changes; the layer cache is keyed on it too.
+   */
+  frame?: number;
+  /** Bumped every time the player presents new pixels (a seek can repaint the same index). */
+  stamp?: number;
+  /** Skip the encoder stage (JPEG / pixel sort) in this render: the media is playing. */
+  liveOnly?: boolean;
 }
 export interface SourceProvider {
   /** `pxScale` = output pixels per layer pixel. */
@@ -186,6 +200,7 @@ export class GLRenderer {
 
   /** Layer pixels as a mipmapped texture, uploaded once per key (images are flipped to GL orientation). */
   private sourceTex(ref: SourceRef): WebGLTexture {
+    if (ref.frame !== undefined) return this.dynamicTex(ref);
     const hit = this.sources.get(ref.key);
     if (hit) {
       hit.used = ++this.clock;
@@ -209,6 +224,47 @@ export class GLRenderer {
     gl.generateMipmap(gl.TEXTURE_2D);
     this.sources.set(ref.key, { tex, bytes: ref.w * ref.h * 4 * 1.34, used: ++this.clock });
     return tex;
+  }
+
+  /**
+   * Video / GIF frame: one texture per source, re-uploaded straight from the element (or
+   * bitmap) when the frame changes. No mipmaps (rebuilding them every frame costs more than
+   * it gives at preview scales) and no 2D canvas in between: the GPU flips it on upload.
+   */
+  private dynamicTex(ref: SourceRef): WebGLTexture {
+    const gl = this.gl;
+    let s = this.sources.get(ref.key);
+    if (s && (s.w !== ref.w || s.h !== ref.h)) {
+      this.dropSource(ref.key);
+      s = undefined;
+    }
+    if (!s) {
+      const tex = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      s = { tex, bytes: ref.w * ref.h * 4, used: 0, frame: undefined, w: ref.w, h: ref.h };
+      this.sources.set(ref.key, s);
+    }
+    s.used = ++this.clock;
+    const token = ref.stamp ?? ref.frame;
+    if (s.frame !== token) {
+      gl.bindTexture(gl.TEXTURE_2D, s.tex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, ref.load());
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      s.frame = token;
+    }
+    return s.tex;
+  }
+
+  /** Effects of a layer for this frame: animated media mixes the frame index into the seed. */
+  private static frameFx(l: Layer, ref: SourceRef): GlitchState {
+    const fx = l.fx!;
+    if (ref.frame === undefined || !l.media?.animate) return fx;
+    return { ...fx, seed: frameSeed(fx.seed, ref.frame, true) };
   }
 
   private dropSource(key: string): void {
@@ -321,7 +377,7 @@ export class GLRenderer {
   /* ------------------------------ per-layer cache ------------------------------ */
 
   private cacheKey(l: Layer, ref: SourceRef, job: RenderJob): string {
-    return JSON.stringify([ref.key, l.w, l.h, l.x, l.y, l.scaleX, l.scaleY, l.rotation, l.flipX, l.flipY, l.fx, job.w, job.h, job.doc.w, job.doc.h]);
+    return JSON.stringify([ref.key, ref.frame ?? null, ref.stamp ?? null, l.media?.animate ?? null, l.w, l.h, l.x, l.y, l.scaleX, l.scaleY, l.rotation, l.flipX, l.flipY, l.fx, job.w, job.h, job.doc.w, job.doc.h]);
   }
 
   /**
@@ -342,8 +398,9 @@ export class GLRenderer {
       this.caches.set(id, e);
     }
     e.used = ++this.clock;
-    const fx = l.fx!;
-    const enc = encParams(fx);
+    const fx = GLRenderer.frameFx(l, ref);
+    // While media plays the encoder stage is skipped (it would land frames late); on pause it runs.
+    const enc = ref.liveOnly ? null : encParams(fx);
     if (e.key === key && (e.encDone || !enc)) return { entry: e, pending: null };
     if (e.key !== key) {
       // place the layer in document space, then its own passes into the cache texture
@@ -357,7 +414,7 @@ export class GLRenderer {
       e.encDone = false;
     }
     if (!enc) {
-      e.encDone = true;
+      if (!ref.liveOnly) e.encDone = true;
       return { entry: e, pending: null };
     }
     if (e.encBusy) return { entry: e, pending: null };
@@ -452,8 +509,10 @@ export class GLRenderer {
     const acc = this.beginAccum(job, set);
     for (const l of job.doc.layers) {
       if (!l.visible || l.opacity <= 0) continue;
-      const ref = this.provider.source(l, (job.w / job.doc.w) * Math.max(l.scaleX, l.scaleY));
-      if (!ref) continue;
+      const live = this.provider.source(l, (job.w / job.doc.w) * Math.max(l.scaleX, l.scaleY));
+      if (!live) continue;
+      // Final quality (thumbnails, export, capture) always runs every stage, playing or not.
+      const ref: SourceRef = { ...live, liveOnly: false };
       if (job.layerFx && layerHasFx(l)) {
         const { entry, pending } = this.layerCache(l, ref, job, set, true);
         if (pending) await pending;

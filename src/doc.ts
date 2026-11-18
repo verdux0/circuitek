@@ -56,6 +56,14 @@ export interface Layer {
   autoName?: boolean;
   /** Effects of this layer alone (applied before it is blended), in screen space. */
   fx?: GlitchState;
+  /** Animated source (video / GIF): `src` keys a poster bitmap plus the media player. */
+  media?: LayerMedia;
+}
+
+export interface LayerMedia {
+  kind: 'video' | 'gif';
+  /** "Glitch animado": the noise seed mixes in the frame index (see media/timing.ts). */
+  animate: boolean;
 }
 
 export interface DocState {
@@ -81,6 +89,7 @@ export function cloneLayer(l: Layer): Layer {
   const c: Layer = { ...l };
   if (l.text) c.text = { ...l.text };
   if (l.fx) c.fx = JSON.parse(JSON.stringify(l.fx)) as GlitchState;
+  if (l.media) c.media = { ...l.media };
   return c;
 }
 
@@ -354,6 +363,10 @@ export function sanitizeDoc(input: unknown): DocState {
       fx: sanitizeState(r.fx),
     };
     if (r.autoName !== undefined) l.autoName = r.autoName !== false;
+    if (r.media && typeof r.media === 'object') {
+      const m = r.media as Record<string, unknown>;
+      if (m.kind === 'video' || m.kind === 'gif') l.media = { kind: m.kind, animate: m.animate !== false };
+    }
     if (r.text && typeof r.text === 'object') {
       const t = r.text as Record<string, unknown>;
       l.text = {
