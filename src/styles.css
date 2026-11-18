@@ -728,3 +728,73 @@ html, body { overflow-x: hidden; }
 .ctx-item:disabled { opacity: 0.4; cursor: default; }
 .ctx-item.danger, .ctx-item.danger .ico { color: var(--danger); }
 .ctx-sep { height: 1px; background: var(--rule); margin: 4px 6px; }
+
+/* ---------- export: split button ▾, format menu, options dialog ---------- */
+.split-btn { grid-column: span 2; display: flex; min-width: 0; }
+.split-btn .ex-main { flex: 1; min-width: 0; border-radius: 7px 0 0 7px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.split-btn .ex-main small { font: 800 11px var(--mono); letter-spacing: 0.06em; background: #0003; border-radius: 4px; padding: 1px 5px; }
+.split-btn .ex-arrow { width: 38px; padding: 0; border-left-width: 1px; border-radius: 0 7px 7px 0; display: grid; place-items: center; }
+.split-btn .ex-arrow .ico { width: 18px; height: 18px; color: #fff; }
+.split-btn .ex-arrow[aria-expanded='true'] .ico { transform: rotate(180deg); }
+.ex-mi { display: flex; flex-direction: column; gap: 1px; min-width: 0; white-space: normal; }
+.ex-mi b { font: 800 13px var(--font); }
+.ex-mi small { font: 600 11px var(--font); color: var(--ink-soft); max-width: 230px; }
+.ctx-item:disabled .ex-mi small { color: var(--accent-dk); opacity: 1; }
+.ctx-item:has(.ex-mi) { min-height: 44px; }
+
+.progress-card progress { width: 140px; accent-color: var(--accent); }
+.progress-card .hw-btn { color: var(--ink); }
+
+.export-sheet { display: flex; flex-direction: column; max-height: calc(100vh - 32px); padding: 16px 18px 14px; }
+.ex-body { overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px 2px 8px; }
+.ex-body fieldset { border: 2px solid var(--edge); border-radius: 8px; margin: 0; padding: 10px 12px 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 14px; }
+.ex-body legend { font: 800 10.5px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; padding: 0 6px; }
+.ex-field { display: flex; flex-direction: column; gap: 4px; font: 700 12px var(--font); }
+.ex-field span { display: flex; justify-content: space-between; gap: 6px; }
+.ex-field input[type='number'], .ex-field input[type='text'], .ex-field select {
+  height: 34px; border: 2px solid var(--edge); border-radius: 6px; padding: 0 8px; background: var(--panel-hi); color: var(--ink); font: 600 13px var(--mono); min-width: 0;
+}
+.ex-field input[type='range'] { accent-color: var(--accent); }
+.ex-wide, .ex-file > *, .ex-loop, .ex-check { grid-column: 1 / -1; }
+.ex-loop { display: flex; flex-direction: column; gap: 6px; font: 600 13px var(--font); }
+.ex-loop label { display: flex; align-items: baseline; gap: 6px; }
+.ex-loop small, .ex-check small { color: var(--ink-soft); font-weight: 600; }
+.ex-check { display: flex; align-items: baseline; gap: 8px; font: 600 13px var(--font); }
+.ex-preview { margin: -4px 0 0; font: 700 13px var(--mono); word-break: break-all; color: var(--accent-dk); }
+:root[data-theme='dark'] .ex-preview { color: #ff8a5c; }
+.ex-small { margin: 0; font-size: 12px; color: var(--ink-soft); }
+.ex-save { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font: 600 13px var(--font); }
+.ex-note { margin: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.ex-warn { color: var(--accent-dk); font-weight: 700; }
+:root[data-theme='dark'] .ex-warn { color: #ff8a5c; }
+.ex-nofsa { margin: 0; font-size: 13px; }
+.ex-foot { display: flex; align-items: center; gap: 10px; padding-top: 10px; border-top: 2px solid var(--edge); flex-wrap: wrap; }
+.ex-foot #ex-go { display: inline-flex; align-items: center; gap: 6px; }
+.ex-foot #ex-go .ico { width: 18px; height: 18px; color: #fff; }
+.ex-progress { flex: 1 1 200px; display: flex; align-items: center; gap: 8px; min-width: 0; visibility: hidden; font: 600 12px var(--mono); }
+.ex-progress progress { flex: 1; min-width: 60px; accent-color: var(--accent); }
+.export-backdrop.running .ex-progress { visibility: visible; }
+.export-backdrop.running .ex-body { opacity: 0.6; }
+
+.fx-anim-row { gap: 10px; }
+.fx-anim-row .switch { align-items: center; gap: 8px; }
+.fx-anim-label { font: 800 11px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.fx-anim-hint { color: var(--ink-soft); font-size: 11.5px; }
+
+@media (max-width: 560px) {
+  /* The options dialog takes the whole screen on phones. */
+  .export-backdrop { padding: 0; }
+  .export-sheet { width: 100%; max-height: none; height: 100%; height: 100dvh; border-radius: 0; border-width: 0; box-shadow: none; }
+  .ex-body fieldset { grid-template-columns: 1fr 1fr; }
+  .ex-foot { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+  .ex-foot .hw-btn { flex: 1; min-height: 44px; }
+  .ex-progress { flex-basis: 100%; }
+  .split-btn .ex-arrow { width: 44px; }
+}
+/* Disabled formats must stay readable: only the name is dimmed, the reason keeps full contrast. */
+.ctx-item:disabled:has(.ex-mi) { opacity: 1; cursor: default; }
+.ctx-item:disabled:has(.ex-mi) b, .ctx-item:disabled:has(.ex-mi) .ico { opacity: 0.45; }
+.ctx-item:disabled .ex-mi small { color: var(--accent-dk); font-weight: 700; }
+:root[data-theme='dark'] .ctx-item:disabled .ex-mi small { color: #ff8a5c; }
+/* Footer pinned to the bottom of the (full-screen on phones) dialog. */
+.export-sheet .ex-body { flex: 1 1 auto; }

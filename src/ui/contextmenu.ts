@@ -68,6 +68,8 @@ export class ContextMenu {
     let y = clientY + 2;
     if (x + r.width > vw - MARGIN) x = Math.max(MARGIN, clientX - r.width - 2);
     if (y + r.height > vh - MARGIN) y = Math.max(MARGIN, Math.min(clientY - r.height - 2, vh - r.height - MARGIN));
+    // Never past the left / right edge either (narrow phones, menus opened near a border).
+    x = Math.max(MARGIN, Math.min(x, vw - r.width - MARGIN));
     el.style.left = `${Math.round(x)}px`;
     el.style.top = `${Math.round(y)}px`;
 
@@ -84,10 +86,16 @@ export class ContextMenu {
     this.items()[0]?.focus({ preventScroll: true });
   }
 
+  /** Called once when the open menu closes (e.g. to reset aria-expanded on its button). */
+  onClosed: (() => void) | null = null;
+
   close(): void {
     if (!this.el) return;
     this.el.remove();
     this.el = null;
+    const cb = this.onClosed;
+    this.onClosed = null;
+    cb?.();
     document.removeEventListener('pointerdown', this.onDocPointer, true);
     document.removeEventListener('contextmenu', this.onDocPointer, true);
     document.removeEventListener('wheel', this.onClose, { capture: true });

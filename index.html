@@ -113,8 +113,10 @@
               <button class="hw-btn" id="btn-random" aria-label="Aleatorio" title="Efectos aleatorios para la capa (R)"><i data-ico="dices"></i></button>
               <button class="hw-btn" id="btn-variants" aria-label="Variantes" title="8 variantes de los efectos de la capa (V)"><i data-ico="variants"></i></button>
               <button class="hw-btn" id="btn-ab" aria-label="Ver original" title="Mantén pulsado para ver el original sin efectos (B)"><i data-ico="compare"></i></button>
-              <button class="hw-btn accent" id="btn-png" aria-label="Exportar PNG" title="Exportar PNG a resolución completa"><i data-ico="download"></i><small>PNG</small></button>
-              <button class="hw-btn accent" id="btn-jpg" aria-label="Exportar JPG" title="Exportar JPG a resolución completa"><i data-ico="download"></i><small>JPG</small></button>
+              <div class="split-btn" role="group" aria-label="Exportar">
+                <button class="hw-btn accent ex-main" id="btn-export"><i data-ico="download"></i><span>Exportar</span><small>PNG</small></button>
+                <button class="hw-btn accent ex-arrow" id="btn-export-menu" aria-haspopup="menu" aria-expanded="false" aria-label="Elegir formato de exportación (PNG, JPG, GIF, MP4)" title="Formatos y opciones de exportación"><i data-ico="chevron"></i></button>
+              </div>
             </div>
           </section>
           <div class="rack-tabs" role="tablist" aria-label="Panel">
@@ -141,6 +143,14 @@
                   <input id="seed" type="number" min="0" max="999999" step="1" inputmode="numeric" />
                 </label>
                 <button class="hw-btn icon" id="btn-dice" aria-label="Seed nueva" title="Seed nueva"><i data-ico="dices"></i></button>
+              </div>
+              <div class="rack-row fx-anim-row">
+                <label class="switch" title="El ruido del glitch cambia en cada fotograma. En una imagen fija, habilita exportar GIF / MP4 animados (en bucle perfecto).">
+                  <input type="checkbox" id="fx-anim" />
+                  <span class="switch-track"><span class="switch-thumb"></span></span>
+                  <span class="fx-anim-label">Glitch animado</span>
+                </label>
+                <small class="fx-anim-hint" id="fx-anim-hint">ruido distinto en cada fotograma · GIF / MP4</small>
               </div>
               <div class="rack-row">
                 <select id="preset-select" aria-label="Presets de fábrica"></select>
@@ -170,7 +180,7 @@
     <input type="file" id="preset-file" accept=".json,application/json" hidden />
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <div class="overlay" id="progress" hidden>
-      <div class="progress-card"><span class="led on blink"></span><span id="progress-msg">Renderizando…</span></div>
+      <div class="progress-card" role="status"><span class="led on blink"></span><span id="progress-msg">Renderizando…</span><progress id="progress-bar" max="1" value="0" aria-label="Progreso"></progress><button class="hw-btn hw-btn-sm" id="progress-cancel">Cancelar</button></div>
     </div>
     <div class="sheet-backdrop" id="variants" hidden>
       <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="var-title">

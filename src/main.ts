@@ -10,7 +10,7 @@ import { CABLE_COLORS, RewirePanel } from './ui/rewire';
 import { StagesPanel } from './ui/stages';
 import { makeSampleImage } from './sample';
 import { Session } from './session';
-import { clampSize, cloneDoc, cloneLayer, emptyDoc, fxTargetId, sanitizeDoc, flipLayer, getLayer, makeLayer, newId, pasteLayer, rotateLayer, textLayerName, type BitmapSource, type DocState, type Layer } from './doc';
+import { clampSize, cloneDoc, cloneLayer, emptyDoc, fxTargetId, layerAnimates, sanitizeDoc, flipLayer, getLayer, makeLayer, newId, pasteLayer, rotateLayer, textLayerName, type BitmapSource, type DocState, type Layer } from './doc';
 import { ProjectStore, parseProjectFile, type ProjectMeta, type ProjectRecord } from './projects';
 import { ContextMenu, type MenuEntry } from './ui/contextmenu';
 import { ico } from './ui/icons';
@@ -21,6 +21,8 @@ import { Viewport } from './ui/viewport';
 import { LayersPanel } from './ui/layers';
 import { hydrateIcons } from './ui/icons';
 import { initCollapsibles } from './ui/collapse';
+import { ExportUI } from './ui/exportui';
+import { sanitizeSettings } from './export/settings';
 import { GifPlayer, VideoPlayer, mediaKind, type MediaPlayer } from './media/player';
 import { SPEEDS, formatTime, frameSeed, spokenTime } from './media/timing';
 
@@ -1096,8 +1098,6 @@ async function exportImage(type: 'image/png' | 'image/jpeg', d: DocState = doc):
     prog.hidden = true;
   }
 }
-$('btn-png').addEventListener('click', () => void exportImage('image/png'));
-$('btn-jpg').addEventListener('click', () => void exportImage('image/jpeg'));
 
 /* ------------------------------ presets file ------------------------------ */
 $('btn-preset-save').addEventListener('click', () => {
@@ -1390,7 +1390,22 @@ function syncFxLabel(): void {
   $('fx-target-name').textContent = name;
   $('fx-panel-name').textContent = name;
   $('fx-panel-name').title = l && !doc.active ? 'Ninguna capa seleccionada: se editan los efectos de la imagen principal' : name;
+  const anim = $<HTMLInputElement>('fx-anim');
+  anim.checked = !!l && layerAnimates(l);
+  $('fx-anim-hint').textContent = l?.media ? 'ruido distinto en cada fotograma del vídeo' : 'ruido distinto en cada fotograma · habilita GIF / MP4';
 }
+$<HTMLInputElement>('fx-anim').addEventListener('change', (e) => {
+  const on = (e.target as HTMLInputElement).checked;
+  const id = fxTargetId(doc);
+  editDoc((d) => {
+    const l = getLayer(d, id);
+    if (!l) return;
+    if (l.media) l.media.animate = on;
+    else if (on) l.animate = true;
+    else delete l.animate;
+  }, 'once');
+  toast(on ? 'Glitch animado: el ruido cambia en cada fotograma' : 'Glitch fijo');
+});
 /** Resets the layer's effects (nothing connected). */
 function clearLayerFx(id: string): void {
   editDoc((d) => {
@@ -1414,6 +1429,8 @@ function redo(): void {
 window.addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement;
   if (t.matches('input, select, textarea')) return;
+  // The export dialog / progress own the keyboard (Esc is handled there).
+  if (exportUi.dialogOpen || exportUi.busy) return;
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key.toLowerCase() === 'z') {
     e.preventDefault();
@@ -1599,6 +1616,28 @@ function openRowMenu(id: string, x: number, y: number): void {
 
 /* ------------------------------ context menu (viewer) ------------------------------ */
 const menu = new ContextMenu();
+
+/* ------------------------------ export (button ▾, formats, options) ------------------------------ */
+const exportUi = new ExportUI(
+  {
+    engine,
+    provider,
+    players,
+    blobFor: (k) => {
+      const b = blobSources.get(k);
+      return b instanceof Blob ? b : undefined;
+    },
+    doc: () => doc,
+    docName: () => project?.name ?? doc.layers.find((l) => !l.text)?.name ?? 'glitch',
+    seed: () => cur().seed,
+    toast,
+    menu,
+    pauseMedia: () => players.forEach((p) => p.pause()),
+  },
+  $<HTMLButtonElement>('btn-export'),
+  $<HTMLButtonElement>('btn-export-menu'),
+);
+$('progress-cancel').addEventListener('click', () => exportUi.cancel());
 function layerEdit(id: string, fn: (l: Layer) => void): void {
   editDoc((d) => {
     const l = getLayer(d, id);
@@ -1784,6 +1823,27 @@ async function hashPixels(img: ImageData): Promise<string> {
 }
 Object.assign(window, {
   __glitch: {
+    /** Export: defaults, a folder to write to (tests pass an OPFS directory instead of the native picker). */
+    exportDefaults: () => exportUi.defaults,
+    setExportDefaults: (s: unknown) => exportUi.saveDefaults(sanitizeSettings(s)),
+    setExportFolder: (h: FileSystemDirectoryHandle | null) => exportUi.setFolder(h),
+    /** Parses an exported video (base64) with Mediabunny: container, codecs, size, duration, frame rate. */
+    inspectVideo: async (b64: string) => {
+      const mb = await import('mediabunny');
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const input = new mb.Input({ source: new mb.BufferSource(bytes), formats: mb.ALL_FORMATS });
+      try {
+        const v = await input.getPrimaryVideoTrack();
+        const a = await input.getPrimaryAudioTrack();
+        const stats = v ? await v.computePacketStats() : null;
+        return {
+          format: (await input.getFormat()).name, codec: v?.codec ?? null, w: v?.displayWidth ?? 0, h: v?.displayHeight ?? 0,
+          duration: await input.computeDuration(), fps: stats?.averagePacketRate ?? 0, frames: stats?.packetCount ?? 0, audio: a?.codec ?? null,
+        };
+      } finally {
+        input.dispose();
+      }
+    },
     /** Transport state of the media bar's player (null without video / GIF). */
     media: () => {
       const t = mediaTarget();
