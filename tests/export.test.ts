@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ditherToIndex } from '../src/export/dither';
 import {
   DEFAULT_TEMPLATE, defaultSettings, estimateGifBytes, gifSize, gifTiming, loopFrameCount, loopSample, mp4Bitrate, mp4Size,
-  pulseEffect, renderFileName, safeFileName, sanitizeSettings, type LoopMode,
+  renderFileName, safeFileName, sanitizeSettings, type LoopMode,
 } from '../src/export/settings';
 
 const ctx = { name: 'Carta de ajuste', seed: 1337, date: new Date(2026, 10, 18, 9, 5, 7), format: 'png', width: 1600, height: 1200 };
@@ -127,20 +127,6 @@ describe('perfect loop time maps', () => {
       // the frame after the last one is the first one: same sample
       expect(step(loopSample(mode, n % n, n, fps, 2, 0.5))).toBeCloseTo(step(a), 9);
     }
-  });
-  it('EFFECT pulse: whole cycles, periodic with n, starts at the base', () => {
-    for (const cycles of [1, 2, 3]) {
-      const n = 37;
-      expect(pulseEffect(50, 20, cycles, 0, n)).toBe(50);
-      for (let i = 0; i < n; i++) expect(pulseEffect(50, 20, cycles, i + n, n)).toBe(pulseEffect(50, 20, cycles, i, n));
-      // seam step comparable to an average step
-      const vals = Array.from({ length: n }, (_, i) => pulseEffect(50, 20, cycles, i, n));
-      const steps = vals.map((v, i) => Math.abs(vals[(i + 1) % n] - v));
-      const seam = steps[n - 1];
-      expect(seam).toBeLessThanOrEqual(Math.max(...steps.slice(0, -1)));
-    }
-    expect(pulseEffect(90, 30, 1, 9, 36)).toBe(100);
-    expect(pulseEffect(40, 0, 1, 9, 36)).toBe(40);
   });
 });
 

@@ -4,6 +4,7 @@
  * not apply stay visible, disabled, with the reason) and opens the options dialog.
  */
 import type { DocState } from '../doc';
+import type { Motion } from '../model';
 import type { ContextMenu, MenuEntry } from './contextmenu';
 import { ico } from './icons';
 import {
@@ -26,6 +27,8 @@ export interface ExportUiHost extends ExportHost {
   menu: ContextMenu;
   /** Pauses every video / GIF (exports render their own frames). */
   pauseMedia(): void;
+  /** Motion of the generated animation (still layers with «Glitch animado»), or null. */
+  motion(): Motion | null;
 }
 
 const STORE_KEY = 'glitch-editor:export';
@@ -225,6 +228,14 @@ export class ExportUI {
     this.closeDialog();
     const s: ExportSettings = sanitizeSettings({ ...this.defaults, format });
     const info = docInfo(this.host.doc(), this.host.players);
+    // Generated animation: the loop the preview plays (seconds × fps of «Movimiento»), so the
+    // GIF matches the preview frame by frame; the MP4 keeps its own rate over the same loop.
+    const motion = !info.media && info.generated ? this.host.motion() : null;
+    if (motion) {
+      s.gif.duration = motion.seconds;
+      s.gif.fps = motion.fps;
+      s.mp4.duration = motion.seconds;
+    }
     const el = document.createElement('div');
     el.className = 'sheet-backdrop export-backdrop';
     el.innerHTML = this.dialogHtml(s, info.media);
@@ -256,13 +267,13 @@ export class ExportUI {
           maxWidth: num('ex-gw', s.gif.maxWidth), fps: num('ex-gfps', s.gif.fps), colors: num('ex-colors', s.gif.colors),
           dither: val('ex-dither'), duration: num('ex-dur', s.gif.duration), repeat: num('ex-repeat', 0),
           loop: el.querySelector<HTMLInputElement>('input[name="ex-loop"]:checked')?.value ?? s.gif.loop,
-          overlap: num('ex-overlap', s.gif.overlap * 100) / 100, pulse: num('ex-pulse', 0), pulseCycles: num('ex-cycles', 1),
+          overlap: num('ex-overlap', s.gif.overlap * 100) / 100,
         });
       }
       if (format === 'mp4') {
         Object.assign(s.mp4, {
           height: num('ex-mh', 0), fps: num('ex-mfps', 30), quality: val('ex-mq'), start: num('ex-start', 0), end: num('ex-end', 0),
-          duration: num('ex-mdur', s.mp4.duration), audio: chk('ex-audio'), pulse: num('ex-pulse', 0), pulseCycles: num('ex-cycles', 1),
+          duration: num('ex-mdur', s.mp4.duration), audio: chk('ex-audio'),
         });
       }
       Object.assign(s, sanitizeSettings(s));
@@ -384,7 +395,12 @@ export class ExportUI {
       const cs = p.delays[0];
       const est = estimateGifBytes(p.w, p.h, p.frames, s.gif.colors, s.gif.dither);
       out.push({ text: `${p.w}×${p.h} · ${p.frames} fotogramas · ${fmtNum(p.fps)} fps · ≈ ${fmtBytes(est)}` });
-      if (p.mode === 'generated') out.push({ text: `Bucle perfecto: ruido${s.gif.pulse ? ' y pulso' : ''} periódicos en ${p.frames} fotogramas.` });
+      if (p.mode === 'generated') {
+        const m = this.host.motion();
+        const name = m ? { flicker: 'Parpadeo', drift: 'Deriva suave', jumps: 'Saltos' }[m.mode] : 'Parpadeo';
+        out.push({ text: `Bucle perfecto: movimiento «${name}» periódico en ${p.frames} fotogramas.` });
+        if (m && (m.seconds !== s.gif.duration || m.fps !== s.gif.fps)) out.push({ text: `La vista previa usa ${m.seconds} s a ${fmtNum(m.fps)} fps: con otros valores el bucle sigue siendo perfecto, pero los fotogramas no coinciden uno a uno con ella.`, warn: true });
+      }
       else out.push({ text: { crossfade: 'Bucle: fundido cruzado del final con el principio.', pingpong: 'Bucle: ida y vuelta.', trim: 'Bucle: se recorta donde el vídeo mejor enlaza con el principio.' }[p.mode] });
       if (p.clamped) out.push({ text: 'Los GIF no van por encima de 50 fps (retardo mínimo de 2 centésimas): se usa 50.', warn: true });
       else if (p.uneven) out.push({ text: `${fmtNum(s.gif.fps)} fps no cuadra con centésimas: retardos de ${Math.min(...p.delays)} y ${Math.max(...p.delays)} cs (media exacta). Exactos: ${GIF_EXACT_FPS.map((f) => fmtNum(f)).join(', ')} fps.`, warn: true });
@@ -407,9 +423,6 @@ export class ExportUI {
   private dialogHtml(s: ExportSettings, media: boolean): string {
     const f = s.format;
     const scaleSel = (v: number) => `<label class="ex-field"><span>Escala</span><select id="ex-scale">${[0.25, 0.5, 1, 1.5, 2, 3, 4].map((k) => `<option value="${k}"${k === v ? ' selected' : ''}>${k * 100} %</option>`).join('')}</select></label>`;
-    const pulse = (p: { pulse: number; pulseCycles: number }) => media ? '' : `
-      <label class="ex-field"><span>Pulso del EFFECT (±)</span><input id="ex-pulse" type="number" min="0" max="50" step="1" value="${p.pulse}" /></label>
-      <label class="ex-field"><span>Ciclos por bucle</span><input id="ex-cycles" type="number" min="1" max="8" step="1" value="${p.pulseCycles}" /></label>`;
     let opts = '';
     if (f === 'png') opts = scaleSel(s.png.scale);
     if (f === 'jpg') opts = `${scaleSel(s.jpg.scale)}
@@ -432,8 +445,7 @@ export class ExportUI {
         <label><input type="radio" name="ex-loop" value="pingpong"${g.loop === 'pingpong' ? ' checked' : ''} /> Ida y vuelta</label>
         <label><input type="radio" name="ex-loop" value="trim"${g.loop === 'trim' ? ' checked' : ''} /> Recortar al bucle más cercano</label>
         <label class="ex-field ex-overlap-row"><span>Solape del fundido (%)</span><input id="ex-overlap" type="number" min="5" max="50" step="1" value="${Math.round(g.overlap * 100)}" /></label>
-      </fieldset>` : ''}
-      ${pulse(g)}`;
+      </fieldset>` : ''}`;
     }
     if (f === 'mp4') {
       const m = s.mp4;
@@ -445,8 +457,7 @@ export class ExportUI {
       <label class="ex-field"><span>Hasta (s, 0 = final)</span><input id="ex-end" type="number" min="0" step="0.1" value="${m.end}" /></label>
       <label class="ex-check"><input id="ex-audio" type="checkbox"${m.audio ? ' checked' : ''} /> Audio <small id="ex-audio-why">comprobando…</small></label>`
         : `<label class="ex-field"><span>Duración (s)</span><input id="ex-mdur" type="number" min="0.5" max="120" step="0.5" value="${m.duration}" /></label>
-      <p class="ex-small" id="ex-audio-why">Animación generada: sin audio.</p>`}
-      ${pulse(m)}`;
+      <p class="ex-small" id="ex-audio-why">Animación generada: sin audio.</p>`}`;
     }
     const fsa = canPickFolder();
     return `

@@ -71,6 +71,19 @@ export class StagesPanel {
     }
   }
 
+  /**
+   * Shows the values of `s` on the knobs without editing anything (an animation frame).
+   * The knob the user is dragging is left alone: its value is the new base.
+   */
+  showValues(s: GlitchState): void {
+    for (const def of STAGES) {
+      for (const p of def.params) {
+        const k = this.knobs.get(`${def.id}.${p.id}`)!;
+        if (!k.el.classList.contains('active')) k.set(s.stages[def.id].p[p.id]);
+      }
+    }
+  }
+
   /** Cheap update while dragging (LEDs only). */
   syncLeds(): void {
     const s = this.host.state();

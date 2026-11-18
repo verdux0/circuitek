@@ -168,7 +168,7 @@ async def run(browser, url, out: Path, check, fixtures_dir: Path):
     await pg.keyboard.press("Escape")
     check("«Glitch animado» en una imagen fija habilita GIF/MP4", gif_ok)
     await open_format(pg, "GIF")
-    await set_field(pg, "#ex-gw", 320); await set_field(pg, "#ex-gfps", 20); await set_field(pg, "#ex-dur", 1); await set_field(pg, "#ex-pulse", 15)
+    await set_field(pg, "#ex-gw", 320); await set_field(pg, "#ex-gfps", 20); await set_field(pg, "#ex-dur", 1)  # (the old EFFECT «pulse» field is gone: «Movimiento» replaces it)
     await pg.screenshot(path=str(out / "32-export-dialogo-gif.png"))
     name, data = await export_dialog(pg)
     g = parse_gif(data)

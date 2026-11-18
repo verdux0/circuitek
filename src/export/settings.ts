@@ -31,9 +31,6 @@ export interface ExportSettings {
     overlap: number;
     /** 0 = forever (NETSCAPE2.0 loop count 0). */
     repeat: number;
-    /** Generated animations: EFFECT pulse amplitude (0–50 points) and whole cycles per loop. */
-    pulse: number;
-    pulseCycles: number;
   };
   mp4: {
     /** Output height in px (0 = original). */
@@ -46,8 +43,6 @@ export interface ExportSettings {
     /** Generated animations (no video): length in seconds. */
     duration: number;
     audio: boolean;
-    pulse: number;
-    pulseCycles: number;
   };
 }
 
@@ -60,8 +55,8 @@ export function defaultSettings(): ExportSettings {
     save: 'download',
     png: { scale: 1 },
     jpg: { quality: 92, scale: 1 },
-    gif: { maxWidth: 480, fps: 20, colors: 128, dither: 'bayer', duration: 3, loop: 'crossfade', overlap: 0.25, repeat: 0, pulse: 0, pulseCycles: 1 },
-    mp4: { height: 0, fps: 30, quality: 'medium', start: 0, end: 0, duration: 4, audio: true, pulse: 0, pulseCycles: 1 },
+    gif: { maxWidth: 480, fps: 20, colors: 128, dither: 'bayer', duration: 3, loop: 'crossfade', overlap: 0.25, repeat: 0 },
+    mp4: { height: 0, fps: 30, quality: 'medium', start: 0, end: 0, duration: 4, audio: true },
   };
 }
 
@@ -102,8 +97,6 @@ export function sanitizeSettings(input: unknown): ExportSettings {
       loop: pick(gif.loop, ['crossfade', 'pingpong', 'trim'] as const, d.gif.loop),
       overlap: clamp(gif.overlap, 0.05, 0.5, d.gif.overlap),
       repeat: clamp(gif.repeat, 0, 65535, d.gif.repeat, 1),
-      pulse: clamp(gif.pulse, 0, 50, d.gif.pulse, 1),
-      pulseCycles: clamp(gif.pulseCycles, 1, 8, d.gif.pulseCycles, 1),
     },
     mp4: {
       height: [0, 360, 480, 720, 1080, 1440, 2160].includes(mp4.height as number) ? (mp4.height as number) : d.mp4.height,
@@ -113,8 +106,6 @@ export function sanitizeSettings(input: unknown): ExportSettings {
       end,
       duration: clamp(mp4.duration, 0.5, 120, d.mp4.duration),
       audio: mp4.audio !== false,
-      pulse: clamp(mp4.pulse, 0, 50, d.mp4.pulse, 1),
-      pulseCycles: clamp(mp4.pulseCycles, 1, 8, d.mp4.pulseCycles, 1),
     },
   };
 }
@@ -254,22 +245,17 @@ export function loopFrameCount(mode: LoopMode, fps: number, dur: number, overlap
   return Math.max(2, Math.round(len * fps));
 }
 
-/** Generated animations: EFFECT value for frame i of n (periodic with n, whole cycles). */
-export function pulseEffect(base: number, amp: number, cycles: number, i: number, n: number): number {
-  if (!amp || n <= 0) return base;
-  const v = base + amp * Math.sin((2 * Math.PI * cycles * (((i % n) + n) % n)) / n);
-  return Math.round(Math.min(100, Math.max(0, v)));
-}
-
 /* ------------------------------------ estimates ------------------------------------ */
 
 /**
- * Rough GIF size (bytes): LZW on dithered content packs ~0.55–0.9 of the palette bits per pixel.
+ * Rough GIF size (bytes): LZW on dithered content packs ~0.3–0.6 of the palette bits per pixel.
  * Good enough to warn about huge files before rendering them.
  */
 export function estimateGifBytes(w: number, h: number, frames: number, colors: number, dither: Dither): number {
   const bits = Math.max(1, Math.ceil(Math.log2(Math.max(2, colors))));
-  const k = dither === 'floyd' ? 0.9 : dither === 'bayer' ? 0.75 : 0.55;
+  // Calibrated on real exports (320×240, 128 colours, Bayer: ~0.25 of the palette bits); kept
+  // on the high side because the estimate exists to warn about huge files before rendering.
+  const k = dither === 'floyd' ? 0.6 : dither === 'bayer' ? 0.4 : 0.3;
   return Math.round(w * h * frames * (bits / 8) * k + frames * 30 + 800);
 }
 

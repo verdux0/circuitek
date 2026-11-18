@@ -138,6 +138,97 @@ async def run(browser, url, out: Path, check, mobile=True):
     await ctx.close()
     check("animación: sin errores en consola", not errors, " | ".join(errors[:5]))
 
+async def run_motion(browser, url, out: Path, check):
+    """Modo Movimiento: knobs that move, base untouched, preview == export, GIF loop."""
+    sys.path.insert(0, str(Path(__file__).parent))
+    from verify_export import parse_gif, gif_frames, seam
+    errors = []
+    ctx = await browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, is_mobile=True, has_touch=True, accept_downloads=True)
+    pg = await ctx.new_page()
+    pg.on("console", lambda m: errors.append(f"console.{m.type}: {m.text}") if m.type == "error" else None)
+    pg.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+    await pg.goto(url); await pg.wait_for_load_state("networkidle")
+    await pg.evaluate("window.__glitch.loadSample()"); await settle(pg, 600)
+    await pg.tap("#btn-rack"); await pg.wait_for_timeout(400)
+    await pg.locator("#tab-fx").tap()
+    await pg.locator(".fx-anim-row .switch-track").tap(); await pg.wait_for_timeout(300)
+    check("«Glitch animado» muestra el panel Movimiento (Parpadeo por defecto)", await pg.locator("#motion-box").is_visible() and await pg.eval_on_selector("#mo-mode", "e => e.value") == "flicker")
+    await pg.select_option("#mo-mode", "drift"); await pg.wait_for_timeout(200)
+    await pg.screenshot(path=str(out / "52-movimiento-panel-movil.png"))
+    await pg.tap("#btn-rack"); await pg.wait_for_timeout(400)
+    base = await pg.evaluate("window.__glitch.getState()")
+    hist0 = await pg.evaluate("window.__glitch.historySize()")
+
+    for mode in ("drift", "jumps"):
+        await pg.evaluate(f"(() => {{ const s = window.__glitch.getState(); s.motion.mode = '{mode}'; s.motion.targets.cables = true; window.__glitch.setState(s); }})()")
+        await settle(pg)
+        for n in (5, 41):
+            await pg.evaluate(f"window.__glitch.anim.show({n})"); await settle(pg, 400)
+            screen = await pg.evaluate("window.__glitch.screenHash()")
+            export = await pg.evaluate(f"window.__glitch.exportFrameHash({n})")
+            check(f"{mode}: fotograma {n} del editor = fotograma {n} exportado (píxel a píxel)", screen == export, f"{screen} / {export}")
+        await pg.evaluate("window.__glitch.anim.stop()")
+    await pg.evaluate("(() => { const s = window.__glitch.getState(); s.motion.mode = 'drift'; window.__glitch.setState(s); })()")
+    await settle(pg)
+    hist_a = await pg.evaluate("window.__glitch.historySize()")
+
+    await pg.locator("#mb-play").tap()
+    vals = []
+    for _ in range(6):
+        await pg.wait_for_timeout(350)
+        vals.append(await pg.evaluate("[document.querySelector('#knob-effect .knob-value').textContent, document.querySelector('#knob-filter .knob-value').textContent]"))
+    state_now = await pg.evaluate("window.__glitch.getState()")
+    check("Deriva suave: los knobs EFFECT y FILTER giran solos mientras suena", len({v[0] for v in vals}) > 2 and len({v[1] for v in vals}) > 2, json.dumps(vals))
+    check("la animación no toca el estado base ni el historial", state_now["effect"] == 50 and state_now["filter"] == 50 and await pg.evaluate("window.__glitch.historySize()") == hist_a)
+
+    # the user turns EFFECT while it plays → new base, animation keeps going around it
+    kb = await pg.locator("#knob-effect .knob-dial").bounding_box()
+    await pg.mouse.move(kb["x"] + kb["width"] / 2, kb["y"] + kb["height"] / 2)
+    await pg.mouse.down(); await pg.mouse.move(kb["x"] + kb["width"] / 2, kb["y"] - 70, steps=8); await pg.mouse.up()
+    await pg.wait_for_timeout(300)
+    new_base = (await pg.evaluate("window.__glitch.getState()"))["effect"]
+    after = []
+    for _ in range(5):
+        await pg.wait_for_timeout(300)
+        after.append(int(await pg.evaluate("document.querySelector('#knob-effect .knob-value').textContent")))
+    playing = (await st(pg))["playing"]
+    check("mover un knob durante ▶ cambia la base y la animación sigue alrededor de ella",
+          new_base > 60 and playing and len(set(after)) > 1 and abs(sum(after) / len(after) - new_base) < 30,
+          f"base {new_base} · valores mostrados {after}")
+    check("solo el gesto del usuario entra en el historial (una entrada)", await pg.evaluate("window.__glitch.historySize()") == hist_a + 1)
+    await pg.locator("#mb-play").tap(); await settle(pg)
+    shown = await pg.evaluate("document.querySelector('#knob-effect .knob-value').textContent")
+    check("■ vuelve al estado base: el knob muestra su valor base", int(shown) == new_base, f"{shown} / {new_base}")
+    await pg.screenshot(path=str(out / "53-movimiento-movil.png"))
+    await ctx.close()
+
+    # GIF export with the motion loop (desktop: downloads)
+    ctx = await browser.new_context(viewport={"width": 1400, "height": 1000}, accept_downloads=True)
+    pg = await ctx.new_page()
+    pg.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+    await pg.goto(url); await pg.wait_for_load_state("networkidle")
+    await pg.evaluate("window.__glitch.loadSample()"); await settle(pg)
+    await pg.evaluate("""(() => { const d = window.__glitch.getDoc(); d.layers[0].animate = true; window.__glitch.setDoc(d);
+        const s = window.__glitch.getState(); s.motion = { ...s.motion, mode: 'drift', intensity: 70, speed: 60, seconds: 2, fps: 20 }; window.__glitch.setState(s); })()""")
+    await settle(pg)
+    await pg.click("#btn-export-menu"); await pg.locator(".ctx-menu .ctx-item", has_text="GIF").first.click()
+    await pg.wait_for_selector(".export-sheet")
+    await pg.locator("#ex-gw").fill("320"); await pg.locator("#ex-gw").dispatch_event("change")
+    note = await pg.text_content("#ex-note")
+    dur = await pg.eval_on_selector("#ex-dur", "e => e.value")
+    fps = await pg.eval_on_selector("#ex-gfps", "e => e.value")
+    check("exportar GIF: duración y fps del Movimiento, estimación de peso y fotogramas", dur == "2" and fps == "20" and "40 fotogramas" in note and ("KB" in note or "MB" in note) and "Deriva suave" in note, note)
+    async with pg.expect_download(timeout=240000) as dl:
+        await pg.click("#ex-go")
+    data = Path(await (await dl.value).path()).read_bytes()
+    g = parse_gif(data)
+    s_last, s_med, s_max = seam(gif_frames(data))
+    check("GIF con Deriva suave: 40 fotogramas × 5 cs, bucle infinito y costura como un paso normal",
+          g["frames"] == 40 and set(g["delays"]) == {5} and g["loop"] == 0 and s_last <= s_max * 1.05,
+          f"{g['frames']} fotogramas · costura {s_last:.1f} · mediana {s_med:.1f} · máx {s_max:.1f} · {len(data) // 1024} KB")
+    await ctx.close()
+    check("movimiento: sin errores en consola", not errors, " | ".join(errors[:5]))
+
 async def _main():
     import os, shutil
     from playwright.async_api import async_playwright
@@ -152,6 +243,7 @@ async def _main():
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=chrome, args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"])
         await run(b, url, out, check, mobile=True)
+        await run_motion(b, url, out, check)
         await b.close()
     print(f"\n{sum(res)}/{len(res)} OK")
 

@@ -318,16 +318,16 @@ export class RewirePanel {
    * Cheap update while a value is being dragged (here or in the other view): moves the knobs /
    * sliders to the state's amounts without rebuilding anything.
    */
-  syncValues(): void {
-    const s = this.host.state();
+  syncValues(s: GlitchState = this.host.state()): void {
     if (s.cables.map((c) => c.a + c.b).join() !== this.built) return;
     s.cables.forEach((c, i) => {
       if (this.mode === 'full') {
-        if (this.knobs[i] && this.knobs[i].get() !== c.amount) this.knobs[i].set(c.amount);
+        if (this.knobs[i] && !this.knobs[i].el.classList.contains('active') && this.knobs[i].get() !== c.amount) this.knobs[i].set(c.amount);
         return;
       }
       const r = this.list.querySelector<HTMLInputElement>(`input[data-amount="${i}"]`);
-      if (r && Number(r.value) !== c.amount) r.value = String(c.amount);
+      // The slider being dragged keeps the user's value (it becomes the new base).
+      if (r && r !== document.activeElement && Number(r.value) !== c.amount) r.value = String(c.amount);
       const out = r?.parentElement?.querySelector('.rw-mval');
       if (out) out.textContent = String(c.amount);
     });

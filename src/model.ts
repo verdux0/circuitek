@@ -151,8 +151,34 @@ export interface StageState {
   p: Record<string, number>;
 }
 
+/** "Movimiento": how an animated layer moves frame by frame (see src/motion.ts). */
+export type MotionMode = 'flicker' | 'drift' | 'jumps';
+export const MOTION_MODES: MotionMode[] = ['flicker', 'drift', 'jumps'];
+/** GIF-exact rates (whole centiseconds per frame). */
+export const MOTION_FPS = [10, 12.5, 20, 25] as const;
+export const MOTION_SECONDS = [1, 2, 3, 4, 5, 6, 8, 10] as const;
+
+export interface Motion {
+  /** Parpadeo (noise per frame) · Deriva suave (sines) · Saltos (held jumps). */
+  mode: MotionMode;
+  /** 0..100: how far parameters move from their base value. */
+  intensity: number;
+  /** 0..100: cycles per loop (drift) / how often they jump (jumps). */
+  speed: number;
+  /** Which parameters move (drift / jumps). */
+  targets: { effect: boolean; filter: boolean; cables: boolean; stages: boolean };
+  /** Loop length and rate: the preview and the default GIF use them, so both match frame by frame. */
+  seconds: number;
+  fps: number;
+}
+
+export function defaultMotion(): Motion {
+  return { mode: 'flicker', intensity: 50, speed: 50, targets: { effect: true, filter: true, cables: false, stages: false }, seconds: 3, fps: 20 };
+}
+
 export interface GlitchState {
-  v: 1;
+  /** Schema version: 2 added `motion` (version 1 states load with the default motion). */
+  v: 2;
   seed: number;
   /** Global intensity knob (0..100). */
   effect: number;
@@ -160,6 +186,7 @@ export interface GlitchState {
   filter: number;
   cables: Cable[];
   stages: Record<StageId, StageState>;
+  motion: Motion;
 }
 
 export function defaultStageState(id: StageId): StageState {
@@ -170,7 +197,7 @@ export function defaultStageState(id: StageId): StageState {
 
 export function defaultState(): GlitchState {
   return {
-    v: 1,
+    v: 2,
     seed: 1337,
     effect: 50,
     filter: 50,
@@ -181,6 +208,7 @@ export function defaultState(): GlitchState {
       proc: defaultStageState('proc'),
       enc: defaultStageState('enc'),
     },
+    motion: defaultMotion(),
   };
 }
 
@@ -214,12 +242,14 @@ export function sanitizeState(input: unknown): GlitchState {
   if (!input || typeof input !== 'object') return base;
   const o = input as Record<string, unknown>;
   const out: GlitchState = {
-    v: 1,
+    v: 2,
     seed: num(o.seed, { min: 0, max: 4294967295, def: base.seed, step: 1 }),
     effect: num(o.effect, { min: 0, max: 100, def: 50, step: 1 }),
     filter: num(o.filter, { min: 0, max: 100, def: 50, step: 1 }),
     cables: [],
     stages: base.stages,
+    // v1 states (no `motion`) get the default motion.
+    motion: sanitizeMotion(o.motion),
   };
   if (Array.isArray(o.cables)) {
     for (const c of o.cables) {
@@ -248,15 +278,36 @@ export function sanitizeState(input: unknown): GlitchState {
   return out;
 }
 
+/** Validates motion settings (anything missing or out of range → default). */
+export function sanitizeMotion(input: unknown): Motion {
+  const d = defaultMotion();
+  if (!input || typeof input !== 'object') return d;
+  const m = input as Record<string, unknown>;
+  const t = (m.targets && typeof m.targets === 'object' ? m.targets : {}) as Record<string, unknown>;
+  const bool = (v: unknown, def: boolean) => (typeof v === 'boolean' ? v : def);
+  return {
+    mode: MOTION_MODES.includes(m.mode as MotionMode) ? (m.mode as MotionMode) : d.mode,
+    intensity: num(m.intensity, { min: 0, max: 100, def: d.intensity, step: 1 }),
+    speed: num(m.speed, { min: 0, max: 100, def: d.speed, step: 1 }),
+    targets: { effect: bool(t.effect, d.targets.effect), filter: bool(t.filter, d.targets.filter), cables: bool(t.cables, d.targets.cables), stages: bool(t.stages, d.targets.stages) },
+    seconds: (MOTION_SECONDS as readonly number[]).includes(m.seconds as number) ? (m.seconds as number) : d.seconds,
+    fps: (MOTION_FPS as readonly number[]).includes(m.fps as number) ? (m.fps as number) : d.fps,
+  };
+}
+
+/** Frames in one motion loop. */
+export const motionFrames = (m: Motion): number => Math.max(2, Math.round(m.seconds * m.fps));
+
 export interface PresetFile {
   app: 'glitch-editor';
-  version: 1;
+  /** 2: the state carries `motion`. Version 1 files still load (default motion). */
+  version: 2;
   name: string;
   state: GlitchState;
 }
 
 export function toPresetFile(name: string, s: GlitchState): PresetFile {
-  return { app: 'glitch-editor', version: 1, name, state: cloneState(s) };
+  return { app: 'glitch-editor', version: 2, name, state: cloneState(s) };
 }
 
 export function parsePresetFile(text: string): { name: string; state: GlitchState } {

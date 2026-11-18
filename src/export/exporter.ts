@@ -8,10 +8,10 @@
  */
 import type { Engine } from '../engine';
 import type { GLRenderer, SourceProvider, SourceRef } from '../gl/renderer';
-import { cloneDoc, layerAnimates, type DocState, type Layer } from '../doc';
+import type { DocState, Layer } from '../doc';
 import { GifPlayer, type MediaPlayer } from '../media/player';
 import {
-  gifSize, gifTiming, loopFrameCount, loopSample, mp4Bitrate, mp4Size, pulseEffect,
+  gifSize, gifTiming, loopFrameCount, loopSample, mp4Bitrate, mp4Size,
   type ExportSettings, type LoopMode,
 } from './settings';
 import type { SaveSink } from './save';
@@ -153,21 +153,16 @@ export class FrameSource {
   }
 
   /**
-   * Renders the document at timeline time t with noise index `noise`. `effect` maps a layer's
-   * EFFECT for generated animations (pulse); identity otherwise.
+   * Renders the document at timeline time t, frame `noise` of the loop: animated layers go
+   * through stateAtFrame (noise and motion) inside the renderer — the same as the preview.
    */
-  async renderAt(t: number, noise: number, effect?: (l: Layer, base: number) => number): Promise<ImageData> {
+  async renderAt(t: number, noise: number): Promise<ImageData> {
     this.noise = noise;
     this.stamp++;
     const releases: (() => void)[] = [];
     for (const l of this.doc.layers) if (l.media && l.visible && this.host.players.has(l.src)) releases.push(await this.load(l, t));
-    let doc = this.doc;
-    if (effect) {
-      doc = cloneDoc(this.doc);
-      for (const l of doc.layers) if (l.fx && layerAnimates(l)) l.fx.effect = effect(l, l.fx.effect);
-    }
     try {
-      return await this.host.engine.renderWith(this.renderer, doc, this.w, this.h);
+      return await this.host.engine.renderWith(this.renderer, this.doc, this.w, this.h);
     } finally {
       releases.forEach((f) => f());
     }
@@ -324,15 +319,13 @@ export async function exportGif(host: ExportHost, doc: DocState, s: ExportSettin
     const n = plan.frames;
     src.loop = n;
     const overlap = plan.mode === 'crossfade' ? dur * s.gif.overlap : 0;
-    const pulse = plan.mode === 'generated' && s.gif.pulse ? (_l: Layer, base: number, i = 0) => pulseEffect(base, s.gif.pulse, s.gif.pulseCycles, i, n) : null;
     const frameAt = async (i: number): Promise<ImageData> => {
-      const fx = pulse ? (l: Layer, b: number) => pulse(l, b, i) : undefined;
-      if (plan.mode === 'generated') return src.renderAt(0, i % n, fx);
+      if (plan.mode === 'generated') return src.renderAt(0, i % n);
       const smp = loopSample(plan.mode as LoopMode, i, n, s.gif.fps, dur, overlap);
-      const a = await src.renderAt(smp.t, i, fx);
+      const a = await src.renderAt(smp.t, i);
       if (smp.t2 === undefined || smp.alpha >= 1) return a;
       // Both samples of a crossfade share the output frame's noise index.
-      return mixFrames(a, await src.renderAt(smp.t2, i, fx), smp.alpha);
+      return mixFrames(a, await src.renderAt(smp.t2, i), smp.alpha);
     };
 
     // Global palette from frames spread over the whole loop (kept for reuse below).
@@ -507,11 +500,10 @@ export async function exportVideo(
     await output.start();
     started = true;
     src.loop = plan.frames;
-    const pulse = !info.media && s.mp4.pulse ? (i: number) => (_l: Layer, b: number) => pulseEffect(b, s.mp4.pulse, s.mp4.pulseCycles, i, plan.frames) : null;
     for (let i = 0; i < plan.frames; i++) {
       check(signal);
       const t = plan.start + i / plan.fps;
-      const img = await src.renderAt(info.media ? t : 0, i, pulse ? pulse(i) : undefined);
+      const img = await src.renderAt(info.media ? t : 0, i);
       const sample = new mb.VideoSample(img.data, { format: 'RGBA', codedWidth: plan.w, codedHeight: plan.h, timestamp: i / plan.fps, duration: 1 / plan.fps });
       await video.add(sample);
       sample.close();

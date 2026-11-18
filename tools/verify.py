@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from verify_media import run as run_media
 from verify_export import run as run_export
 from verify_gifsearch import run as run_gifsearch
-from verify_anim import run as run_anim
+from verify_anim import run as run_anim, run_motion
 
 URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:4173/"
 OUT = Path(sys.argv[2] if len(sys.argv) > 2 else "docs/screenshots")
@@ -414,6 +414,8 @@ async def main():
         await run_gifsearch(browser, URL, OUT, check)
         # ---- animated still image: ▶/■, preview frame N == exported frame N ----
         await run_anim(browser, URL, OUT, check)
+        # ---- «Movimiento»: Deriva suave / Saltos, knobs that move, GIF loop ----
+        await run_motion(browser, URL, OUT, check)
 
         external = [u for u in requests if not u.startswith(URL) and not u.startswith("blob:") and not u.startswith("data:")]
         check("ninguna petición de red externa tras la carga", not external, ", ".join(external[:5]))

@@ -153,6 +153,31 @@
                 </label>
                 <small class="fx-anim-hint" id="fx-anim-hint">ruido distinto en cada fotograma · GIF / MP4</small>
               </div>
+              <div class="motion-box" id="motion-box" role="group" aria-labelledby="mo-title" hidden>
+                <div class="mo-head">
+                  <span class="mo-title" id="mo-title">Movimiento</span>
+                  <select id="mo-mode" aria-label="Modo de movimiento">
+                    <option value="flicker">Parpadeo · el ruido cambia</option>
+                    <option value="drift">Deriva suave · los knobs oscilan</option>
+                    <option value="jumps">Saltos · saltan y se mantienen</option>
+                  </select>
+                </div>
+                <div class="mo-body">
+                  <div class="mo-knobs"><div id="mo-intensity"></div><div id="mo-speed"></div></div>
+                  <fieldset class="mo-targets" id="mo-targets">
+                    <legend>Qué se anima</legend>
+                    <label><input type="checkbox" data-target="effect" /> Effect</label>
+                    <label><input type="checkbox" data-target="filter" /> Filter</label>
+                    <label><input type="checkbox" data-target="cables" /> Cables</label>
+                    <label><input type="checkbox" data-target="stages" /> Etapas</label>
+                  </fieldset>
+                </div>
+                <div class="mo-loop">
+                  <label>Bucle <select id="mo-seconds" aria-label="Duración del bucle"></select></label>
+                  <label>a <select id="mo-fps" aria-label="Fotogramas por segundo"></select></label>
+                </div>
+                <p class="mo-hint" id="mo-hint"></p>
+              </div>
               <div class="rack-row">
                 <select id="preset-select" aria-label="Presets de fábrica"></select>
                 <button class="hw-btn icon" id="btn-preset-save" aria-label="Guardar preset" title="Guardar los efectos de la capa como preset JSON"><i data-ico="save"></i></button>

@@ -25,6 +25,8 @@ import { ExportUI } from './ui/exportui';
 import { GifSearchPanel } from './ui/gifsearch';
 import { AnimClock, type Transport } from './media/animclock';
 import { FrameSource } from './export/exporter';
+import { stateAtFrame } from './motion';
+import { MOTION_FPS, MOTION_SECONDS, motionFrames, type MotionMode } from './model';
 import { sanitizeSettings } from './export/settings';
 import { GifPlayer, VideoPlayer, mediaKind, type MediaPlayer } from './media/player';
 import { SPEEDS, formatTime, frameSeed, spokenTime } from './media/timing';
@@ -244,6 +246,7 @@ function requestRender(): void {
     engine.renderPreview(doc, null, ctx, showOriginal);
     presents++;
     if (mediaUiDirty) syncMediaBar();
+    syncAnimatedKnobs();
   });
 }
 
@@ -1227,6 +1230,97 @@ ab.addEventListener('pointerdown', (e) => {
 ab.addEventListener('pointerup', () => setAB(false));
 ab.addEventListener('pointercancel', () => setAB(false));
 
+/* ------------------------------ knobs that move with the animation ------------------------------ */
+/** Reused result object: showing a frame's values allocates nothing. */
+const knobFrame = {} as GlitchState;
+let knobsAnimated = false;
+/**
+ * Shows the current frame's values on the knobs (Deriva suave / Saltos), through the same
+ * stateAtFrame the renderer uses. Display only: nothing is edited, nothing enters the history.
+ * The knob being dragged keeps the user's value — that becomes the new base.
+ */
+function syncAnimatedKnobs(): void {
+  const l = fxLayer();
+  let frame: number | undefined;
+  let loop = 0;
+  if (l?.fx && layerAnimates(l) && l.fx.motion.mode !== 'flicker') {
+    if (l.media) frame = players.get(l.src)?.frame;
+    else if (anim.current !== undefined) {
+      frame = anim.current;
+      loop = anim.loopFrames;
+    }
+  }
+  if (frame === undefined || !l?.fx) {
+    if (knobsAnimated) {
+      knobsAnimated = false;
+      showKnobValues(cur());
+    }
+    return;
+  }
+  knobsAnimated = true;
+  showKnobValues(stateAtFrame(l.fx, frame, loop, true, knobFrame));
+}
+function showKnobValues(s: GlitchState): void {
+  if (!effectKnob.el.classList.contains('active')) effectKnob.set(s.effect);
+  if (!filterKnob.el.classList.contains('active')) filterKnob.set(s.filter);
+  stages.showValues(s);
+  miniRewire.syncValues(s);
+  if (rewire.isOpen) rewire.syncValues(s);
+}
+
+/* ------------------------------ «Movimiento» panel ------------------------------ */
+const mo = {
+  box: $('motion-box'),
+  mode: $<HTMLSelectElement>('mo-mode'),
+  seconds: $<HTMLSelectElement>('mo-seconds'),
+  fps: $<HTMLSelectElement>('mo-fps'),
+  hint: $('mo-hint'),
+  targets: $('mo-targets'),
+};
+mo.seconds.innerHTML = MOTION_SECONDS.map((v) => `<option value="${v}">${v} s</option>`).join('');
+mo.fps.innerHTML = MOTION_FPS.map((v) => `<option value="${v}">${String(v).replace('.', ',')} fps</option>`).join('');
+const moIntensity = new Knob({
+  label: 'INTENSIDAD', min: 0, max: 100, def: 50, value: 50, size: 'sm', format: (v) => `${v}%`,
+  info: 'Cuánto se alejan los parámetros de su valor base.',
+  onInput: (v) => edit((s) => { s.motion.intensity = v; }, 'live'),
+  onChange: () => edit(() => {}, 'end'),
+});
+const moSpeed = new Knob({
+  label: 'VELOCIDAD', min: 0, max: 100, def: 50, value: 50, size: 'sm', format: (v) => `${v}%`,
+  info: 'Deriva: ciclos por bucle (1 a 4). Saltos: cada cuántos fotogramas saltan (12 a 2).',
+  onInput: (v) => edit((s) => { s.motion.speed = v; }, 'live'),
+  onChange: () => edit(() => {}, 'end'),
+});
+$('mo-intensity').append(moIntensity.el);
+$('mo-speed').append(moSpeed.el);
+mo.mode.addEventListener('change', () => edit((s) => { s.motion.mode = mo.mode.value as MotionMode; }, 'once'));
+mo.seconds.addEventListener('change', () => edit((s) => { s.motion.seconds = Number(mo.seconds.value); }, 'once'));
+mo.fps.addEventListener('change', () => edit((s) => { s.motion.fps = Number(mo.fps.value); }, 'once'));
+mo.targets.addEventListener('change', (e) => {
+  const t = (e.target as HTMLInputElement).dataset.target as keyof GlitchState['motion']['targets'] | undefined;
+  if (t) edit((s) => { s.motion.targets[t] = (e.target as HTMLInputElement).checked; }, 'once');
+});
+/** Panel ← state of the layer the effects editor targets. */
+function syncMotionPanel(): void {
+  const l = getLayer(doc, fxTargetId(doc));
+  const on = !!l?.fx && layerAnimates(l);
+  mo.box.hidden = !on;
+  if (!on || !l?.fx) return;
+  const m = l.fx.motion;
+  mo.mode.value = m.mode;
+  mo.seconds.value = String(m.seconds);
+  mo.fps.value = String(m.fps);
+  moIntensity.set(m.intensity);
+  moSpeed.set(m.speed);
+  for (const cb of mo.targets.querySelectorAll<HTMLInputElement>('input[data-target]')) cb.checked = m.targets[cb.dataset.target as keyof typeof m.targets];
+  const flicker = m.mode === 'flicker';
+  mo.box.classList.toggle('flicker', flicker);
+  for (const x of mo.box.querySelectorAll<HTMLInputElement>('#mo-targets input')) x.disabled = flicker;
+  mo.hint.textContent = flicker
+    ? 'Parpadeo: el ruido del glitch cambia en cada fotograma; los knobs no se mueven.'
+    : `${motionFrames(m)} fotogramas por bucle. Los knobs giran solos mientras suena; si mueves uno, ese valor pasa a ser la base.`;
+}
+
 /* ------------------------------ media bar (video / GIF transport) ------------------------------ */
 const mb = {
   bar: $('media-bar'),
@@ -1281,6 +1375,7 @@ function syncMediaBar(): void {
   mb.play.title = still ? 'Animar el glitch / parar y volver al estado base (Espacio)' : 'Reproducir / pausa (Espacio)';
   mb.play.classList.toggle('pressed', playing);
   mb.bar.dataset.kind = p.kind;
+  if (still && l.fx) anim.configure(l.fx.motion.fps, motionFrames(l.fx.motion));
   mb.kind.textContent = still
     ? anim.current === undefined ? 'ANIMACIÓN · PARADA' : `ANIMACIÓN · ${anim.current + 1}/${anim.loopFrames}`
     : p.kind === 'gif' ? `GIF · ${p.w}×${p.h}` : `VÍDEO · ${p.w}×${p.h}`;
@@ -1466,8 +1561,9 @@ function syncFxLabel(): void {
   $('fx-target-name').textContent = name;
   $('fx-panel-name').textContent = name;
   $('fx-panel-name').title = l && !doc.active ? 'Ninguna capa seleccionada: se editan los efectos de la imagen principal' : name;
-  const anim = $<HTMLInputElement>('fx-anim');
-  anim.checked = !!l && layerAnimates(l);
+  const animSwitch = $<HTMLInputElement>('fx-anim');
+  animSwitch.checked = !!l && layerAnimates(l);
+  syncMotionPanel();
   $('fx-anim-hint').textContent = l?.media ? 'ruido distinto en cada fotograma del vídeo' : 'ruido distinto en cada fotograma · habilita GIF / MP4';
 }
 $<HTMLInputElement>('fx-anim').addEventListener('change', (e) => {
@@ -1709,7 +1805,14 @@ const exportUi = new ExportUI(
     seed: () => cur().seed,
     toast,
     menu,
-    pauseMedia: () => players.forEach((p) => p.pause()),
+    pauseMedia: () => {
+      players.forEach((p) => p.pause());
+      anim.pause();
+    },
+    motion: () => {
+      const t = mediaTarget();
+      return t && t.player.kind === 'anim' ? (t.layer.fx?.motion ?? null) : null;
+    },
   },
   $<HTMLButtonElement>('btn-export'),
   $<HTMLButtonElement>('btn-export-menu'),
