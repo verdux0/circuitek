@@ -23,6 +23,8 @@ import { hydrateIcons } from './ui/icons';
 import { initCollapsibles } from './ui/collapse';
 import { ExportUI } from './ui/exportui';
 import { GifSearchPanel } from './ui/gifsearch';
+import { AnimClock, type Transport } from './media/animclock';
+import { FrameSource } from './export/exporter';
 import { sanitizeSettings } from './export/settings';
 import { GifPlayer, VideoPlayer, mediaKind, type MediaPlayer } from './media/player';
 import { SPEEDS, formatTime, frameSeed, spokenTime } from './media/timing';
@@ -162,8 +164,34 @@ function replaceDoc(next: DocState): void {
  * Pixels for each layer at the resolution the GPU needs: image proxy (≤1600 px) or full
  * bitmap; text rasterized at a power-of-two scale so zooming does not re-raster every step.
  */
+/**
+ * Clock of the animated still layers ("Glitch animado" on an image or text): stopped by default;
+ * while it shows a frame, those layers render frame N through the same stateAtFrame as exports.
+ */
+const anim = new AnimClock();
+let reducedMotionAsk = 0;
+anim.allowMotion = () => {
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) return true;
+  // Never starts by itself; with reduced motion only a second, explicit ▶ within 5 s plays it.
+  if (Date.now() - reducedMotionAsk < 5000) return true;
+  reducedMotionAsk = Date.now();
+  toast('Tu sistema pide reducir el movimiento: la animación no arranca. Pulsa ▶ otra vez en 5 s si quieres verla igualmente.');
+  return false;
+};
+
 const provider: SourceProvider = {
   source(l, pxScale) {
+    const r = sourceOf(l, pxScale);
+    // Animated still layers: frame N of the clock (undefined when stopped → the base state).
+    if (r && !l.media && anim.current !== undefined) {
+      r.noise = anim.current;
+      r.loop = anim.loopFrames;
+    }
+    return r;
+  },
+};
+function sourceOf(l: Layer, pxScale: number): ReturnType<SourceProvider['source']> {
+  {
     if (l.text) {
       const t = l.text;
       const k = Math.min(2 ** Math.ceil(Math.log2(Math.max(pxScale, 1 / 16))), 4096 / Math.max(l.w, l.h));
@@ -179,8 +207,8 @@ const provider: SourceProvider = {
     const proxy = bm.proxy as ImageBitmap;
     if (bm.proxyW < l.w && pxScale * l.w <= bm.proxyW * 1.05) return { key: `${l.src}#p`, w: proxy.width, h: proxy.height, load: () => proxy };
     return { key: `${l.src}#f`, w: l.w, h: l.h, load: () => bm.full as TexImageSource };
-  },
-};
+  }
+}
 let engine: Engine;
 try {
   engine = new Engine(provider);
@@ -468,6 +496,7 @@ $('btn-dice').addEventListener('click', () => edit((s) => { s.seed = freshSeed()
 function afterChange(full: boolean, docTouched = false): void {
   if (docTouched) {
     syncPlayers();
+    if (anim.current !== undefined && !doc.layers.some((l) => !l.media && l.animate)) anim.stop();
     session.schedule();
     viewport.sync();
     layersPanel.sync();
@@ -599,9 +628,17 @@ async function reopenPlayer(k: string, kind: 'video' | 'gif'): Promise<void> {
   }
 }
 /** The player the media bar drives: the selected layer's, else the first animated layer's. */
-function mediaTarget(): { layer: Layer; player: MediaPlayer } | null {
-  const pick = (l: Layer | undefined) => (l?.media && players.get(l.src) ? { layer: l, player: players.get(l.src)! } : null);
-  return pick(getLayer(doc, doc.active)) ?? pick(getLayer(doc, fxTargetId(doc))) ?? doc.layers.map(pick).find((x) => x) ?? null;
+function mediaTarget(): { layer: Layer; player: Transport } | null {
+  const pick = (l: Layer | undefined) => (l?.media && players.get(l.src) ? { layer: l, player: players.get(l.src)! as Transport } : null);
+  const media = pick(getLayer(doc, doc.active)) ?? pick(getLayer(doc, fxTargetId(doc))) ?? doc.layers.map(pick).find((x) => x) ?? null;
+  if (media) return media;
+  // No video / GIF: the clock of the animated still layers drives the same bar.
+  const still = (l: Layer | undefined) => (l && !l.media && l.animate ? l : undefined);
+  const layer = still(getLayer(doc, fxTargetId(doc))) ?? doc.layers.find((l) => !l.media && l.animate);
+  if (!layer) return null;
+  anim.w = doc.w;
+  anim.h = doc.h;
+  return { layer, player: anim };
 }
 /** Frames each animated layer at its current frame as a still image (capture / projects). */
 async function freezeMedia(d: DocState): Promise<number> {
@@ -1215,6 +1252,12 @@ function markMediaUi(): void {
 function toggleMedia(): void {
   const t = mediaTarget();
   if (!t) return;
+  if (t.player.kind === 'anim') {
+    // ▶ / ■: stop goes back to the base state.
+    if (anim.playing) anim.stop();
+    else void anim.play();
+    return;
+  }
   if (t.player.playing) t.player.pause();
   else void t.player.play();
 }
@@ -1227,10 +1270,20 @@ function syncMediaBar(): void {
   if (!t) return;
   const { player: p, layer: l } = t;
   const playing = p.playing;
-  mb.play.innerHTML = ico(playing ? 'pause' : 'play');
-  mb.play.setAttribute('aria-label', playing ? 'Pausa' : 'Reproducir');
+  const still = p.kind === 'anim';
+  // ▶ / ■ for the still animation (■ = back to the base state), ▶ / ⏸ for media.
+  const icon = playing ? (still ? 'stop' : 'pause') : 'play';
+  if (mb.play.dataset.icon !== icon) {
+    mb.play.dataset.icon = icon;
+    mb.play.innerHTML = ico(icon);
+  }
+  mb.play.setAttribute('aria-label', playing ? (still ? 'Parar (vuelve al estado base)' : 'Pausa') : 'Reproducir');
+  mb.play.title = still ? 'Animar el glitch / parar y volver al estado base (Espacio)' : 'Reproducir / pausa (Espacio)';
   mb.play.classList.toggle('pressed', playing);
-  mb.kind.textContent = p.kind === 'gif' ? `GIF · ${p.w}×${p.h}` : `VÍDEO · ${p.w}×${p.h}`;
+  mb.bar.dataset.kind = p.kind;
+  mb.kind.textContent = still
+    ? anim.current === undefined ? 'ANIMACIÓN · PARADA' : `ANIMACIÓN · ${anim.current + 1}/${anim.loopFrames}`
+    : p.kind === 'gif' ? `GIF · ${p.w}×${p.h}` : `VÍDEO · ${p.w}×${p.h}`;
   const d = p.duration;
   mb.seek.max = String(d || 0);
   if (!scrubbing) mb.seek.value = String(p.time);
@@ -1241,19 +1294,35 @@ function syncMediaBar(): void {
   if (mb.speed.value !== sp) mb.speed.value = sp;
   mb.loop.setAttribute('aria-pressed', String(p.loop));
   mb.loop.classList.toggle('pressed', p.loop);
+  mb.loop.disabled = still;
+  mb.loop.title = still ? 'La animación siempre es un bucle perfecto' : 'Bucle';
   const audio = p.kind === 'video' && p.hasAudio !== false;
   mb.mute.disabled = !audio;
   mb.vol.disabled = !audio;
-  mb.mute.title = audio ? 'Silenciar / activar sonido (M)' : p.kind === 'gif' ? 'Los GIF no tienen sonido' : 'Este vídeo no tiene audio';
-  mb.mute.innerHTML = ico(p.muted || !audio ? 'volume-x' : 'volume');
+  mb.mute.title = audio ? 'Silenciar / activar sonido (M)' : p.kind === 'video' ? 'Este vídeo no tiene audio' : 'Sin sonido';
+  const vol = p.muted || !audio ? 'volume-x' : 'volume';
+  if (mb.mute.dataset.icon !== vol) {
+    mb.mute.dataset.icon = vol;
+    mb.mute.innerHTML = ico(vol);
+  }
   mb.mute.setAttribute('aria-label', p.muted ? 'Activar sonido' : 'Silenciar');
   mb.mute.setAttribute('aria-pressed', String(p.muted));
   mb.vol.value = String(p.muted ? 0 : Math.round(p.volume * 100));
-  mb.anim.checked = !!l.media?.animate;
-  // The encoder stage (JPEG / pixel sort) does not run while playing: say so.
+  mb.anim.checked = layerAnimates(l);
+  // Encoder stage (JPEG / pixel sort): skipped while media plays; in the still animation it
+  // runs at its own pace (the last encoded frame is held). Say which.
   const enc = !!l.fx && encParams(l.fx) !== null;
   mb.note.hidden = !(enc && playing);
+  mb.note.textContent = still ? 'JPEG/SORT: A SU RITMO' : 'JPEG/SORT: SOLO EN PAUSA';
+  mb.note.title = still
+    ? 'JPEG y pixel sort tardan más que un fotograma: se muestra el último fotograma codificado hasta que llega el siguiente. La exportación los aplica a todos.'
+    : 'JPEG y pixel sort son demasiado lentos para cada fotograma: se aplican al pausar, al capturar y al exportar';
 }
+anim.onFrame = () => {
+  requestRender();
+  markMediaUi();
+};
+anim.onState = () => markMediaUi();
 mb.play.addEventListener('click', toggleMedia);
 mb.prev.addEventListener('click', () => mediaTarget()?.player.step(-1));
 mb.next.addEventListener('click', () => mediaTarget()?.player.step(1));
@@ -1291,7 +1360,13 @@ mb.anim.addEventListener('change', () => {
   if (!t) return;
   const on = mb.anim.checked;
   editDoc((d) => {
-    for (const l of d.layers) if (l.src === t.layer.src && l.media) l.media.animate = on;
+    for (const l of d.layers) {
+      if (l.src === t.layer.src && l.media) l.media.animate = on;
+      else if (l.id === t.layer.id && !l.media) {
+        if (on) l.animate = true;
+        else delete l.animate;
+      }
+    }
   }, 'once');
   toast(on ? 'Glitch animado: el ruido cambia en cada fotograma' : 'Glitch fijo: el mismo patrón en todos los fotogramas');
 });
@@ -1831,6 +1906,30 @@ async function hashPixels(img: ImageData): Promise<string> {
 }
 Object.assign(window, {
   __glitch: {
+    /** Still animation clock (tests): drive it and read its stats. */
+    anim: {
+      play: () => anim.play(),
+      stop: () => anim.stop(),
+      show: (i: number) => anim.show(i),
+      state: () => ({ current: anim.current, playing: anim.playing, painted: anim.painted, dropped: anim.dropped, fps: anim.fps, loopFrames: anim.loopFrames, enc: { ...engine.gl.encStats } }),
+    },
+    historySize: () => history.size,
+    /** Hash of the editor's screen canvas: exactly what the user sees. */
+    screenHash: () => hashPixels(ctx.getImageData(0, 0, screen.width, screen.height)),
+    /** Export frame i of the generated animation, at the preview size, through the exporter's own FrameSource. */
+    exportFrameHash: async (i: number) => {
+      const src = new FrameSource(
+        { engine, provider, players, blobFor: (k) => { const b = blobSources.get(k); return b instanceof Blob ? b : undefined; } },
+        cloneDoc(doc), engine.previewW, engine.previewH,
+      );
+      src.loop = anim.loopFrames;
+      try {
+        await src.init();
+        return await hashPixels(await src.renderAt(0, i));
+      } finally {
+        src.dispose();
+      }
+    },
     /** Export: defaults, a folder to write to (tests pass an OPFS directory instead of the native picker). */
     exportDefaults: () => exportUi.defaults,
     setExportDefaults: (s: unknown) => exportUi.saveDefaults(sanitizeSettings(s)),

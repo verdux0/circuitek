@@ -1,7 +1,7 @@
 import { COMP_FRAG, FRAG, LAYER_FRAG, LAYER_VERT, VERT } from './shaders';
 import { buildGpuPasses, encParams, encSeed, type EncParams, type GlitchState, type GpuPass } from '../model';
 import { BLENDS, layerAnimates, layerMatrix, type DocState, type Layer } from '../doc';
-import { frameSeed } from '../media/timing';
+import { stateAtFrame } from '../motion';
 
 /**
  * WebGL2 layer compositor + glitch chain.
@@ -50,6 +50,10 @@ interface CacheEntry extends Target {
   /** Encoder stage result has been written into the texture. */
   encDone: boolean;
   encBusy: boolean;
+  /** An encoded result has been shown at least once (animated preview can hold it). */
+  hasEnc?: boolean;
+  /** Animated preview + encoder: GPU frames go here; the encoder reads them; `tex` keeps the last encoded frame. */
+  side?: Target;
 }
 
 /** What the renderer needs from the app to draw a layer. */
@@ -73,6 +77,8 @@ export interface SourceRef {
    * `frame` (exports: output frame i, also for still layers). Defaults to `frame`.
    */
   noise?: number;
+  /** Loop length (frames) the noise / motion of this render is periodic with. */
+  loop?: number;
 }
 export interface SourceProvider {
   /** `pxScale` = output pixels per layer pixel. */
@@ -266,11 +272,14 @@ export class GLRenderer {
   }
 
   /** Effects of a layer for this frame: animated media mixes the frame index into the seed. */
-  private static frameFx(l: Layer, ref: SourceRef): GlitchState {
-    const fx = l.fx!;
-    const n = ref.noise ?? ref.frame;
-    if (n === undefined || !layerAnimates(l)) return fx;
-    return { ...fx, seed: frameSeed(fx.seed, n, true) };
+  /** One reusable result object per layer: an animated preview allocates no new state per frame. */
+  private scratch = new Map<string, GlitchState>();
+
+  /** Effects of this render's frame: the shared stateAtFrame (same as the exports). */
+  private frameFx(l: Layer, ref: SourceRef): GlitchState {
+    let out = this.scratch.get(l.id);
+    if (!out) this.scratch.set(l.id, (out = {} as GlitchState));
+    return stateAtFrame(l.fx!, ref.noise ?? ref.frame, ref.loop ?? 0, layerAnimates(l), out);
   }
 
   private dropSource(key: string): void {
@@ -395,6 +404,7 @@ export class GLRenderer {
     const key = this.cacheKey(l, ref, job);
     let e = this.caches.get(id);
     if (e && (e.w !== job.w || e.h !== job.h)) {
+      if (e.side) this.freeTarget(e.side);
       this.freeTarget(e);
       this.caches.delete(id);
       e = undefined;
@@ -404,18 +414,23 @@ export class GLRenderer {
       this.caches.set(id, e);
     }
     e.used = ++this.clock;
-    const fx = GLRenderer.frameFx(l, ref);
+    const fx = this.frameFx(l, ref);
     // While media plays the encoder stage is skipped (it would land frames late); on pause it runs.
     const enc = ref.liveOnly ? null : encParams(fx);
     if (e.key === key && (e.encDone || !enc)) return { entry: e, pending: null };
+    // Animated still preview with the encoder on: it cannot keep up with every frame, so the
+    // screen holds the last encoded frame while the encoder works on the newest one (the GPU
+    // result goes to a side texture). The animation never blocks or flickers to GPU-only.
+    if (!final && enc && ref.noise !== undefined && e.hasEnc) {
+      if (e.key === key || e.encBusy) return { entry: e, pending: null };
+      e.side ??= this.emptyTarget(job.w, job.h);
+      this.placeAndRun(l, ref, job, set, fx, e.side.fb);
+      e.key = key;
+      e.encDone = false;
+      return { entry: e, pending: this.runLayerEncoder(id, e, enc, encSeed(fx), e.side.fb) };
+    }
     if (e.key !== key) {
-      // place the layer in document space, then its own passes into the cache texture
-      const gl = this.gl;
-      gl.bindFramebuffer(gl.FRAMEBUFFER, set.tmp.fb);
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      this.drawQuad(this.sourceTex(ref), GLRenderer.layerQuad(l), job.doc, set.tmp.fb, set, 1, false);
-      this.runPasses(buildGpuPasses(fx), set.tmp.tex, e.fb, set);
+      this.placeAndRun(l, ref, job, set, fx, e.fb);
       e.key = key;
       e.encDone = false;
     }
@@ -427,10 +442,21 @@ export class GLRenderer {
     return { entry: e, pending: this.runLayerEncoder(id, e, enc, encSeed(fx)) };
   }
 
-  private async runLayerEncoder(id: string, e: CacheEntry, p: EncParams, seed: number): Promise<void> {
+  /** Places the layer in document space (tmp), then runs its own passes into `out`. */
+  private placeAndRun(l: Layer, ref: SourceRef, job: RenderJob, set: TargetSet, fx: GlitchState, out: WebGLFramebuffer): void {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, set.tmp.fb);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    this.drawQuad(this.sourceTex(ref), GLRenderer.layerQuad(l), job.doc, set.tmp.fb, set, 1, false);
+    this.runPasses(buildGpuPasses(fx), set.tmp.tex, out, set);
+  }
+
+  private async runLayerEncoder(id: string, e: CacheEntry, p: EncParams, seed: number, src: WebGLFramebuffer = e.fb): Promise<void> {
     const runKey = e.key;
     e.encBusy = true;
-    const input = this.readFb(e.fb, e.w, e.h);
+    const t0 = performance.now();
+    const input = this.readFb(src, e.w, e.h);
     const out = await this.encode(input, p, seed);
     e.encBusy = false;
     if (this.caches.get(id) !== e) return;
@@ -447,12 +473,19 @@ export class GLRenderer {
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, e.w, e.h, gl.RGBA, gl.UNSIGNED_BYTE, out);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     e.encDone = true;
+    e.hasEnc = true;
+    this.encStats.n++;
+    this.encStats.ms += performance.now() - t0;
     this.onAsync();
   }
+
+  /** Encoder stage cost (read-back + worker + upload) over the live renders: count and total ms. */
+  readonly encStats = { n: 0, ms: 0 };
 
   private dropCache(id: string): void {
     const e = this.caches.get(id);
     if (!e) return;
+    if (e.side) this.freeTarget(e.side);
     this.freeTarget(e);
     this.caches.delete(id);
   }
@@ -461,6 +494,7 @@ export class GLRenderer {
   private sweep(doc: DocState, usedNow: number): void {
     const ids = new Set(doc.layers.filter((l) => l.fx).map((l) => l.id));
     for (const id of [...this.caches.keys()]) if (!ids.has(id.split('@')[0])) this.dropCache(id);
+    for (const id of this.scratch.keys()) if (!ids.has(id)) this.scratch.delete(id);
     let total = [...this.caches.values()].reduce((a, e) => a + e.w * e.h * 4, 0);
     const lru = [...this.caches.entries()].filter(([id, e]) => e.used < usedNow && !e.encBusy && !(this.finals > 0 && id.endsWith('F'))).sort((a, b) => a[1].used - b[1].used);
     while (total > this.cacheBudget && lru.length) {

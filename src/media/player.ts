@@ -5,8 +5,9 @@
  * transport state (play / time / volume…) changes. Nothing runs while paused.
  */
 import { DEFAULT_FPS, clampSpeed, estimateFps, frameAt } from './timing';
+import type { Transport } from './animclock';
 
-export interface MediaPlayer {
+export interface MediaPlayer extends Transport {
   readonly kind: 'video' | 'gif';
   readonly w: number;
   readonly h: number;

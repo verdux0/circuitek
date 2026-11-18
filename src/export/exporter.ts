@@ -79,6 +79,8 @@ export class FrameSource {
   private current = new Map<string, TexImageSource>();
   private stamp = 0;
   private noise = 0;
+  /** Loop length of the export (frames): animated layers' noise / motion are periodic with it. */
+  loop = 0;
   private fallback = new Set<string>();
 
   constructor(private host: ExportHost, private doc: DocState, readonly w: number, readonly h: number) {
@@ -88,10 +90,10 @@ export class FrameSource {
         const img = l.media ? this.current.get(l.src) : undefined;
         const p = l.media ? host.players.get(l.src) : undefined;
         if (img && p) {
-          return { key: `${l.src}#x`, w: p.w, h: p.h, frame: this.noise, stamp: this.stamp, noise: this.noise, liveOnly: false, load: () => img };
+          return { key: `${l.src}#x`, w: p.w, h: p.h, frame: this.noise, stamp: this.stamp, noise: this.noise, loop: this.loop, liveOnly: false, load: () => img };
         }
         const r = live.source(l, px);
-        return r ? { ...r, noise: this.noise, liveOnly: false } : null;
+        return r ? { ...r, noise: this.noise, loop: this.loop, liveOnly: false } : null;
       },
     };
     this.renderer = host.engine.exportRenderer(provider);
@@ -320,6 +322,7 @@ export async function exportGif(host: ExportHost, doc: DocState, s: ExportSettin
       plan = planGif(doc, info, { ...s, gif: { ...s.gif, duration: dur } });
     }
     const n = plan.frames;
+    src.loop = n;
     const overlap = plan.mode === 'crossfade' ? dur * s.gif.overlap : 0;
     const pulse = plan.mode === 'generated' && s.gif.pulse ? (_l: Layer, base: number, i = 0) => pulseEffect(base, s.gif.pulse, s.gif.pulseCycles, i, n) : null;
     const frameAt = async (i: number): Promise<ImageData> => {
@@ -503,6 +506,7 @@ export async function exportVideo(
     check(signal);
     await output.start();
     started = true;
+    src.loop = plan.frames;
     const pulse = !info.media && s.mp4.pulse ? (i: number) => (_l: Layer, b: number) => pulseEffect(b, s.mp4.pulse, s.mp4.pulseCycles, i, plan.frames) : null;
     for (let i = 0; i < plan.frames; i++) {
       check(signal);

@@ -26,6 +26,11 @@ export class History<T = unknown> {
     return JSON.parse(next) as T;
   }
 
+  /** Undo steps stored (tests check that an animation adds none). */
+  get size(): number {
+    return this.past.length;
+  }
+
   get canUndo(): boolean {
     return this.past.length > 0;
   }
