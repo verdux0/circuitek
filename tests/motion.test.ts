@@ -106,11 +106,25 @@ describe('Movimiento: Deriva suave y Saltos', () => {
     expect(values.size).toBeGreaterThan(5);
     expect(JSON.stringify(s)).toBe(before);
   });
-  it('Parpadeo keeps every knob at its base and only changes the noise', () => {
-    const s = withMotion('flicker', { intensity: 100 });
+  it('Parpadeo with Intensidad 0: only the noise changes (the knobs stay at their base)', () => {
+    const s = withMotion('flicker', { intensity: 0 });
     const f = stateAtFrame(s, 9, 60, true);
     expect(f.effect).toBe(s.effect);
-    expect(f.seed).not.toBe(s.seed);
+    expect(f.filter).toBe(s.filter);
+    expect(f.seed).toBe(frameSeed(s.seed, 9, true));
+  });
+  it('Parpadeo with Intensidad: the selected parameters jitter on every frame, within range', () => {
+    // Regression: 8 of the 15 cable modes ignore the seed; a seed-only flicker left them frozen.
+    const s = withMotion('flicker', { intensity: 50, targets: { effect: true, filter: true, cables: false, stages: false } });
+    const filters = Array.from({ length: 60 }, (_, i) => stateAtFrame(s, i, 60, true).filter);
+    expect(new Set(filters).size).toBeGreaterThan(5);
+    // consecutive frames differ most of the time (noise, not held like Saltos)
+    expect(filters.filter((v, i) => i && v !== filters[i - 1]).length).toBeGreaterThan(40);
+    // small: ±(50 % × half range × 0.4) = ±10 around the base of 50
+    for (const v of filters) expect(Math.abs(v - 50)).toBeLessThanOrEqual(10);
+    // deterministic and periodic
+    expect(stateAtFrame(s, 7 + 60, 60, true).filter).toBe(stateAtFrame(s, 7, 60, true).filter);
+    expect(stateAtFrame(s, 7, 60, true).seed).toBe(frameSeed(s.seed, 7, true));
   });
 });
 

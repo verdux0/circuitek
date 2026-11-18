@@ -5,7 +5,9 @@
  * from (seed, frame index) — no Math.random(), no clock.
  *
  * Modes ("Movimiento"):
- * - Parpadeo (flicker): the noise seed changes every frame; knobs stay put.
+ * - Parpadeo (flicker): the noise seed changes every frame AND the selected parameters jitter a
+ *   little, independently on every frame (intensity 0 = seed only). The jitter matters: 8 of the
+ *   15 cable modes do not use the seed at all, so a seed-only flicker left them frozen.
  * - Deriva suave (drift): each selected parameter oscillates around its base value,
  *   base + A·sin(2π·k·i/N + φ), with k whole cycles per loop and φ from the seed → the loop
  *   of N frames closes perfectly.
@@ -51,10 +53,18 @@ export function jumpHold(speed: number): number {
  * Value of one parameter on frame i of a loop of n frames. `base` is the user's value; the
  * result is clamped / snapped to [min, max] / step.
  */
-export function paramAt(mode: 'drift' | 'jumps', seed: number, salt: number, i: number, n: number, base: number,
+/** Parpadeo moves parameters less than the other modes: it is noise, not a gesture. */
+export const FLICKER_SCALE = 0.4;
+
+export function paramAt(mode: 'flicker' | 'drift' | 'jumps', seed: number, salt: number, i: number, n: number, base: number,
   min: number, max: number, step: number, intensity: number, speed: number): number {
   const amp = (intensity / 100) * (max - min) * 0.5;
   if (!amp) return clampParam(base, min, max, step);
+  if (mode === 'flicker') {
+    // A new random offset every frame (same seed + frame → same offset).
+    const h = mixSeed(mixSeed(seed, salt), 0x9000 + i);
+    return clampParam(base + amp * FLICKER_SCALE * (2 * rand01(h) - 1), min, max, step);
+  }
   if (mode === 'drift') {
     const k = driftCycles(seed, salt, speed);
     const phi = TAU * rand01(mixSeed(seed, salt + 0x7777));
@@ -81,18 +91,11 @@ export function stateAtFrame(base: GlitchState, frame: number | undefined, loopF
   const o = out ?? ({} as GlitchState);
   o.v = base.v;
   o.motion = m;
-  if (m.mode === 'flicker') {
-    o.seed = frameSeed(base.seed, i, true);
-    o.effect = base.effect;
-    o.filter = base.filter;
-    o.cables = base.cables;
-    o.stages = base.stages;
-    return o;
-  }
   const mode = m.mode;
   const t = m.targets;
   const seed = base.seed >>> 0;
-  o.seed = base.seed;
+  // Parpadeo also changes the noise seed every frame; Deriva / Saltos keep the user's seed.
+  o.seed = mode === 'flicker' ? frameSeed(base.seed, i, true) : base.seed;
   o.effect = t.effect ? paramAt(mode, seed, SALT_EFFECT, i, n, base.effect, 0, 100, 1, m.intensity, m.speed) : base.effect;
   o.filter = t.filter ? paramAt(mode, seed, SALT_FILTER, i, n, base.filter, 0, 100, 1, m.intensity, m.speed) : base.filter;
   // Cables: own array / objects in `out`, reused from frame to frame.

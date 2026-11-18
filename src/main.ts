@@ -1243,7 +1243,7 @@ function syncAnimatedKnobs(): void {
   const l = fxLayer();
   let frame: number | undefined;
   let loop = 0;
-  if (l?.fx && layerAnimates(l) && l.fx.motion.mode !== 'flicker') {
+  if (l?.fx && layerAnimates(l)) {
     if (l.media) frame = players.get(l.src)?.frame;
     else if (anim.current !== undefined) {
       frame = anim.current;
@@ -1314,10 +1314,9 @@ function syncMotionPanel(): void {
   moSpeed.set(m.speed);
   for (const cb of mo.targets.querySelectorAll<HTMLInputElement>('input[data-target]')) cb.checked = m.targets[cb.dataset.target as keyof typeof m.targets];
   const flicker = m.mode === 'flicker';
-  mo.box.classList.toggle('flicker', flicker);
-  for (const x of mo.box.querySelectorAll<HTMLInputElement>('#mo-targets input')) x.disabled = flicker;
+  moSpeed.el.classList.toggle('mo-unused', flicker);
   mo.hint.textContent = flicker
-    ? 'Parpadeo: el ruido del glitch cambia en cada fotograma; los knobs no se mueven.'
+    ? `Parpadeo: cambia el ruido y los parámetros marcados tiemblan en cada fotograma (Intensidad 0 = solo el ruido). ${motionFrames(m)} fotogramas por bucle.`
     : `${motionFrames(m)} fotogramas por bucle. Los knobs giran solos mientras suena; si mueves uno, ese valor pasa a ser la base.`;
 }
 

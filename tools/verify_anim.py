@@ -123,6 +123,31 @@ async def run(browser, url, out: Path, check, mobile=True):
     await pg.evaluate("window.__glitch.anim.stop()")
     await ctx.close()
 
+    # Regression: Parpadeo must visibly change the image with EVERY cable (8 of the 15 modes ignore
+    # the seed; a seed-only flicker left them frozen — the canvas did not move while ▶ ran).
+    ctx = await browser.new_context(viewport=vp)
+    pg = await ctx.new_page()
+    pg.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+    await pg.goto(url); await pg.wait_for_load_state("networkidle")
+    await pg.evaluate("window.__glitch.loadSample()"); await settle(pg)
+    await pg.evaluate("(() => { const d = window.__glitch.getDoc(); d.layers[0].animate = true; window.__glitch.setDoc(d); })()")
+    pins = ["SUB", "RG", "OD", "TG", "AB", "HCLK"]
+    off = {k: {"on": False, "p": {}} for k in ("bus", "buffer", "proc", "enc")}
+    frozen = []
+    for x in range(6):
+        for y in range(x + 1, 6):
+            await pg.evaluate("s => window.__glitch.setState(s)", {"v": 2, "seed": 1337, "effect": 50, "filter": 50,
+                              "cables": [{"a": pins[x], "b": pins[y], "amount": 100}], "stages": off, "motion": {"mode": "flicker"}})
+            hs = set()
+            for n in (0, 1, 2):
+                await pg.evaluate(f"window.__glitch.anim.show({n})"); await settle(pg, 150)
+                hs.add(await pg.evaluate("window.__glitch.screenHash()"))
+            if len(hs) < 2:
+                frozen.append(f"{pins[x]}+{pins[y]}")
+    await pg.evaluate("window.__glitch.anim.stop()")
+    check("Parpadeo cambia la imagen con los 15 cables (ninguno se queda congelado)", not frozen, ", ".join(frozen) or "15/15 se mueven")
+    await ctx.close()
+
     # prefers-reduced-motion: warns and does not start
     ctx = await browser.new_context(viewport=vp, reduced_motion="reduce", is_mobile=mobile, has_touch=mobile)
     pg = await ctx.new_page()

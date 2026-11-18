@@ -65,19 +65,19 @@ PASS móvil: arrastrar en el mini chip crea un cable  ([{"a": "OD", "b": "HCLK",
 PASS móvil: la imagen cambia con el cable
 PASS móvil: imagen y mini chip a la vez en pantalla (sin scroll)
 PASS vídeos de prueba generados (WebM, GIF; MP4 si Chrome lo graba)  (anim.gif, clip-1080.mp4, clip-1080.webm, clip-720.mp4, clip-720.webm, rotado-90.mp4, roto.mp4)
-PASS importar WebM → capa de vídeo reproduciéndose (silenciada)  ({"kind": "video", "decoder": "video", "w": 1280, "h": 720, "duration": 2.995, "time": 0.396011, "frame": 0, "fps": 30, "stamp": 0, "playing": true, "speed": 1, "loop": true, "volume": 1, "muted": true, "hasAudio": true, "animate": true})
+PASS importar WebM → capa de vídeo reproduciéndose (silenciada)  ({"kind": "video", "decoder": "video", "w": 1280, "h": 720, "duration": 2.996, "time": 0.360289, "frame": 10, "fps": 30, "stamp": 1, "playing": true, "speed": 1, "loop": true, "volume": 1, "muted": true, "hasAudio": true, "animate": true})
 PASS vídeo con audio: controles de volumen activos
-PASS reproduciendo: el efecto se ve en movimiento  (diferencia entre fotogramas 105.2)
-PASS fps reales con vídeo 720p (render por fotograma nuevo)  (6.6 renders/s · 7.0 fotogramas nuevos/s)
+PASS reproduciendo: el efecto se ve en movimiento  (diferencia entre fotogramas 103.7)
+PASS fps reales con vídeo 720p (render por fotograma nuevo)  (6.0 renders/s · 6.3 fotogramas nuevos/s)
 PASS pausa → el fotograma queda quieto  (diff 0.000)
 PASS en pausa no se renderiza en bucle  (0 renders en 0,6 s)
-PASS en pausa, mover un knob cambia la imagen  (diff 113.3)
+PASS en pausa, mover un knob cambia la imagen  (diff 111.9)
 PASS barra de búsqueda → tiempo 1,5 s  (t=1.500)
 PASS tiempo actual / total en la barra  (0:01.5 / 0:02.9)
-PASS avanzar 1 fotograma y retroceder 1 vuelve al mismo  (22 → 23 → 22)
-PASS atajo . avanza un fotograma (imagen distinta)  (22 → 23)
-PASS atajo , retrocede un fotograma  (23 → 22)
-PASS mismo fotograma + misma seed + mismo estado = píxeles idénticos  (07e390195b359ee2 07e390195b359ee2 07e390195b359ee2)
+PASS avanzar 1 fotograma y retroceder 1 vuelve al mismo  (15 → 16 → 15)
+PASS atajo . avanza un fotograma (imagen distinta)  (15 → 16)
+PASS atajo , retrocede un fotograma  (16 → 15)
+PASS mismo fotograma + misma seed + mismo estado = píxeles idénticos  (637bc307750c7873 637bc307750c7873 637bc307750c7873)
 PASS interruptor «Glitch animado» cambia el ruido del fotograma  (animate=False)
 PASS Glitch animado de nuevo → mismo resultado que antes (determinista)
 PASS velocidad 0,25× y 2×  (0.25 / 2)
@@ -87,22 +87,22 @@ PASS botón silencio
 PASS atajo M quita el silencio
 PASS Espacio = play/pausa con vídeo
 PASS controles de vídeo con aria-label
-PASS JPEG/pixel sort: aviso «solo en pausa» mientras se reproduce  (7.0 fps con la etapa activa)
+PASS JPEG/pixel sort: aviso «solo en pausa» mientras se reproduce  (6.0 fps con la etapa activa)
 PASS en pausa el aviso desaparece y el codificador es determinista
 PASS Capturar guarda el fotograma actual a resolución completa  ({"w": 1280, "h": 720, "media": false, "layerW": 1280, "layerH": 720})
-PASS exportar PNG con vídeo = resolución completa  ({"w": 1280, "h": 720, "bytes": 29552, "original": [1280, 720]})
+PASS exportar PNG con vídeo = resolución completa  ({"w": 1280, "h": 720, "bytes": 31503, "original": [1280, 720]})
 PASS cambiar de vídeo a imagen libera el reproductor
-PASS deshacer devuelve la capa de vídeo (reproductor reabierto)  ({"kind": "video", "decoder": "video", "w": 1280, "h": 720, "duration": 2.995, "time": 0, "frame": 0, "fps": 30, "stamp": 0, "playing": false, "speed": 1, "loop": true, "volume": 1, "muted": true, "hasAudio": true, "animate": true})
+PASS deshacer devuelve la capa de vídeo (reproductor reabierto)  ({"kind": "video", "decoder": "video", "w": 1280, "h": 720, "duration": 2.996, "time": 0, "frame": 0, "fps": 30, "stamp": 0, "playing": false, "speed": 1, "loop": true, "volume": 1, "muted": true, "hasAudio": true, "animate": true})
 PASS vídeo + GIF en el mismo documento
-PASS fps reales con vídeo 1080p  (7.0 renders/s · 7.3 fotogramas nuevos/s (clip-1080.mp4))
-PASS importar MP4 (H.264)  ({"kind": "video", "decoder": "video", "w": 1280, "h": 720, "duration": 3.023467, "time": 0.373103, "frame": 10, "fps": 30, "stamp": 1, "playing": true, "speed": 1, "loop": true, "volume": 1, "muted": true, "hasAudio": true, "animate": true})
+PASS fps reales con vídeo 1080p  (5.3 renders/s · 5.6 fotogramas nuevos/s (clip-1080.mp4))
+PASS importar MP4 (H.264)  ({"kind": "video", "decoder": "video", "w": 1280, "h": 720, "duration": 2.9989, "time": 0.428484, "frame": 12, "fps": 30, "stamp": 1, "playing": true, "speed": 1, "loop": true, "volume": 1, "muted": true, "hasAudio": true, "animate": true})
 PASS MP4 con rotación 90° en metadatos → se ve en vertical (720×1280)  ({"w": 720, "h": 1280})
 PASS vídeo rotado: lienzo y capa también en vertical (sin aplastar)  ([720, 1280, 720, 1280])
 PASS vídeo rotado: Capturar da 720×1280  ({"w": 720, "h": 1280, "media": false, "layerW": 720, "layerH": 1280})
-PASS GIF animado con ImageDecoder: 48 fotogramas a 25 fps, en movimiento  ({"decoder": "ImageDecoder", "dur": 1.92, "fps": 25} diff 95.9)
+PASS GIF animado con ImageDecoder: 48 fotogramas a 25 fps, en movimiento  ({"decoder": "ImageDecoder", "dur": 1.92, "fps": 25} diff 97.7)
 PASS GIF (ImageDecoder): avanzar fotograma
 PASS GIF sin audio: volumen desactivado
-PASS GIF animado con omggif: 48 fotogramas a 25 fps, en movimiento  ({"decoder": "omggif", "dur": 1.92, "fps": 25} diff 92.3)
+PASS GIF animado con omggif: 48 fotogramas a 25 fps, en movimiento  ({"decoder": "omggif", "dur": 1.92, "fps": 25} diff 96.9)
 PASS GIF (omggif): avanzar fotograma
 PASS archivo corrupto → mensaje claro, sin capa  (No se pudo abrir «roto»: formato o códec no soportado por este navegador (¿HEVC/H.265, ProRes…?))
 PASS recargar la página reabre el vídeo de la sesión  ("video")
@@ -122,19 +122,19 @@ PASS «Usar como predeterminado» persiste tras recargar  (ExportarJPG · jpg q4
 PASS Restablecer vuelve a los ajustes de fábrica
 PASS «Glitch animado» en una imagen fija habilita GIF/MP4
 PASS GIF generado: cabecera, NETSCAPE2.0 infinito, 20 fotogramas × 5 cs, 320×240  ({"sig": "GIF89a", "loop": 0, "frames": 20, "w": 320, "h": 240} delays=[5])
-PASS GIF generado: bucle perfecto (último → primero como un paso normal)  (costura 67.6 · paso mediano 71.3 · máximo 82.4)
+PASS GIF generado: bucle perfecto (último → primero como un paso normal)  (costura 73.7 · paso mediano 74.9 · máximo 83.7)
 PASS MP4 generado: H.264, 640×480, 30 fotogramas a 30 fps, 1 s, sin audio  ({"format": "MP4", "codec": "avc", "w": 640, "h": 480, "duration": 1, "fps": 30, "frames": 30, "audio": null})
 PASS GIF de vídeo, fundido cruzado: 30 fotogramas (2 s − 25 % de solape), 320×180  ({"frames": 30, "w": 320, "h": 180, "loop": 0})
-PASS fundido cruzado: costura comparable al paso normal  (costura 92.9 · mediana 95.8 · máx 117.1)
-PASS GIF ida y vuelta: 2·20−2 = 38 fotogramas, costura normal  (38 fotogramas · costura 101.3 · mediana 98.7)
+PASS fundido cruzado: costura comparable al paso normal  (costura 99.0 · mediana 99.4 · máx 111.7)
+PASS GIF ida y vuelta: 2·20−2 = 38 fotogramas, costura normal  (38 fotogramas · costura 103.0 · mediana 102.1)
 PASS GIF recortado al bucle: ≤ 50 fotogramas, retardo 4 cs exacto  (25 fotogramas)
 PASS 30 fps en GIF: aviso de redondeo y retardos 3/4 cs con media exacta  (retardos [3, 4] media 3.35)
-PASS MP4 de vídeo: H.264 640×360, 15 fps, rango 0,5–2 s (1,5 s), audio AAC  ({"format": "MP4", "codec": "avc", "w": 640, "h": 360, "duration": 1.5736666666666668, "fps": 15, "frames": 23, "audio": "aac"} · Se incluye el audio del vídeo (AAC).)
+PASS MP4 de vídeo: H.264 640×360, 15 fps, rango 0,5–2 s (1,5 s), audio AAC  ({"format": "MP4", "codec": "avc", "w": 640, "h": 360, "duration": 1.5333333333333334, "fps": 15, "frames": 23, "audio": "aac"} · Se incluye el audio del vídeo (AAC).)
 PASS el MP4 exportado se reproduce en un <video>
-PASS exportación determinista: dos GIF iguales byte a byte  (36117 / 36117 bytes)
-PASS carpeta elegida: el archivo se escribe ahí con el nombre de la plantilla  ([["clip-720-1337-20261118.mp4", 163917]])
-PASS MP4: cancelar a mitad no deja archivo a medias (interfaz viva durante la exportación)  (['clip-720-1337-20261118.mp4'] · Exportación cancelada: no se ha guardado nada · bucle de eventos 0 ms)
-PASS GIF: cancelar a mitad no deja archivo a medias (interfaz viva durante la exportación)  (['clip-720-1337-20261118.mp4'] · Exportación cancelada: no se ha guardado nada · bucle de eventos 0 ms)
+PASS exportación determinista: dos GIF iguales byte a byte  (37610 / 37610 bytes)
+PASS carpeta elegida: el archivo se escribe ahí con el nombre de la plantilla  ([["clip-720-1337-20261119.mp4", 161813]])
+PASS MP4: cancelar a mitad no deja archivo a medias (interfaz viva durante la exportación)  (['clip-720-1337-20261119.mp4'] · Exportación cancelada: no se ha guardado nada · bucle de eventos 0 ms)
+PASS GIF: cancelar a mitad no deja archivo a medias (interfaz viva durante la exportación)  (['clip-720-1337-20261119.mp4'] · Exportación cancelada: no se ha guardado nada · bucle de eventos 0 ms)
 PASS móvil: la lista cabe en pantalla y sus filas miden ≥ 44 px  (x=6 w=296 fila 46px)
 PASS móvil: el diálogo ocupa toda la pantalla, sin scroll horizontal  (390×844)
 PASS exportar: sin errores en consola
@@ -160,17 +160,18 @@ PASS buscador: sin errores en consola (aparte del 503 simulado a propósito)
 PASS imagen fija sin «Glitch animado»: sin barra de reproducción
 PASS con «Glitch animado»: aparece ▶ junto a la vista previa, parado (■ por defecto, no arranca solo)  ({"label": "Reproducir", "current": null, "playing": false})
 PASS parado = estado base: la imagen no cambia al activar el interruptor
-PASS ▶ anima: el estado cambia y la imagen cambia entre fotogramas  (fotograma 37 · diferencia 67.7 · pintados 13 · descartados 24)
+PASS ▶ anima: el estado cambia y la imagen cambia entre fotogramas  (fotograma 37 · diferencia 79.7 · pintados 12 · descartados 25)
 PASS ▶ pasa a ■ (Parar)
-PASS vista previa animada: fps reales medidos  (5.4 renders/s (objetivo 20 fps))
+PASS vista previa animada: fps reales medidos  (3.5 renders/s (objetivo 20 fps))
 PASS nada de la animación entra en el historial de deshacer  (2 → 2)
 PASS ■ para y vuelve al estado base (píxeles idénticos al original)
 PASS el historial no crece tras ▶/■
-PASS fotograma 0: el lienzo del editor coincide píxel a píxel con el fotograma 0 exportado  (15e27543c9ba0d71 / 15e27543c9ba0d71)
-PASS fotograma 7: el lienzo del editor coincide píxel a píxel con el fotograma 7 exportado  (8f41a23f54cdf17f / 8f41a23f54cdf17f)
-PASS fotograma 33: el lienzo del editor coincide píxel a píxel con el fotograma 33 exportado  (c907d1102006d6bf / c907d1102006d6bf)
+PASS fotograma 0: el lienzo del editor coincide píxel a píxel con el fotograma 0 exportado  (802c493d6b9bd5a4 / 802c493d6b9bd5a4)
+PASS fotograma 7: el lienzo del editor coincide píxel a píxel con el fotograma 7 exportado  (e9a19cdfb0e1cf48 / e9a19cdfb0e1cf48)
+PASS fotograma 33: el lienzo del editor coincide píxel a píxel con el fotograma 33 exportado  (9d219d1fa35d788e / 9d219d1fa35d788e)
 PASS Espacio = ▶/■ con la animación
-PASS con JPEG/sort: la animación sigue (no se bloquea), el codificador va a su ritmo y la imagen cambia  (codificados 3 en 3 s · 1060 ms por fotograma codificado · aviso «JPEG/SORT: A SU RITMO»)
+PASS con JPEG/sort: la animación sigue (no se bloquea), el codificador va a su ritmo y la imagen cambia  (codificados 3 en 3 s · 1023 ms por fotograma codificado · aviso «JPEG/SORT: A SU RITMO»)
+PASS Parpadeo cambia la imagen con los 15 cables (ninguno se queda congelado)  (15/15 se mueven)
 PASS prefers-reduced-motion: ▶ avisa y no arranca  (Tu sistema pide reducir el movimiento: la animación no arranca. Pulsa ▶ otra vez en 5 s si quieres verla igualmente.)
 PASS animación: sin errores en consola
 PASS «Glitch animado» muestra el panel Movimiento (Parpadeo por defecto)
@@ -178,11 +179,11 @@ PASS drift: fotograma 5 del editor = fotograma 5 exportado (píxel a píxel)  (6
 PASS drift: fotograma 41 del editor = fotograma 41 exportado (píxel a píxel)  (a779472c14038f3a / a779472c14038f3a)
 PASS jumps: fotograma 5 del editor = fotograma 5 exportado (píxel a píxel)  (a31a7995fe953f2c / a31a7995fe953f2c)
 PASS jumps: fotograma 41 del editor = fotograma 41 exportado (píxel a píxel)  (e4f89218d1bf3920 / e4f89218d1bf3920)
-PASS Deriva suave: los knobs EFFECT y FILTER giran solos mientras suena  ([["67", "38"], ["37", "75"], ["26", "47"], ["53", "32"], ["70", "68"], ["37", "25"]])
+PASS Deriva suave: los knobs EFFECT y FILTER giran solos mientras suena  ([["67", "38"], ["37", "75"], ["25", "55"], ["48", "27"], ["75", "75"], ["47", "33"]])
 PASS la animación no toca el estado base ni el historial
-PASS mover un knob durante ▶ cambia la base y la animación sigue alrededor de ella  (base 82 · valores mostrados [65, 99, 99, 84, 57])
+PASS mover un knob durante ▶ cambia la base y la animación sigue alrededor de ella  (base 85 · valores mostrados [93, 100, 92, 60, 65])
 PASS solo el gesto del usuario entra en el historial (una entrada)
-PASS ■ vuelve al estado base: el knob muestra su valor base  (82 / 82)
+PASS ■ vuelve al estado base: el knob muestra su valor base  (85 / 85)
 PASS exportar GIF: duración y fps del Movimiento, estimación de peso y fotogramas  (320×240 · 40 fotogramas · 20 fps · ≈ 1.1 MBBucle perfecto: movimiento «Deriva suave» periódico en 40 fotogramas.Retardo de 5 cs por fotograma (exacto).)
 PASS GIF con Deriva suave: 40 fotogramas × 5 cs, bucle infinito y costura como un paso normal  (40 fotogramas · costura 77.3 · mediana 57.2 · máx 89.1 · 643 KB)
 PASS movimiento: sin errores en consola
@@ -190,4 +191,4 @@ PASS ninguna petición de red externa tras la carga
 PASS ninguna petición de red tras la carga (salvo recargas de prueba)  (12 peticiones locales (recargas del test))
 PASS sin errores en consola
 
-191/191 OK
+192/192 OK
