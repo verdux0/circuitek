@@ -28,12 +28,6 @@ export function frameAt(t: number, fps: number): number {
   return Math.max(0, Math.floor(t * f + 1e-3));
 }
 
-/** Time to seek to for frame n: its middle, so the decoder never lands on the previous frame. */
-export function timeOfFrame(n: number, fps: number): number {
-  const f = Number.isFinite(fps) && fps > 0 ? fps : DEFAULT_FPS;
-  return (Math.max(0, n) + 0.5) / f;
-}
-
 /**
  * Estimates the frame rate from the gaps between presented frames (seconds). Uses the median of
  * positive gaps (robust to dropped frames and seeks) and snaps to common rates within 3 %.

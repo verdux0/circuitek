@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GifWriter } from 'omggif';
 import { gifFrameCountAtLeast2 } from '../src/media/player';
-import { DEFAULT_FPS, MAX_SPEED, MIN_SPEED, SPEEDS, clampSpeed, estimateFps, formatTime, frameAt, frameSeed, spokenTime, timeOfFrame } from '../src/media/timing';
+import { DEFAULT_FPS, MAX_SPEED, MIN_SPEED, SPEEDS, clampSpeed, estimateFps, formatTime, frameAt, frameSeed, spokenTime } from '../src/media/timing';
 
 describe('frameSeed (glitch animado)', () => {
   it('off: the seed is the layer seed for every frame', () => {
@@ -29,14 +29,10 @@ describe('frame index ↔ time', () => {
   it("a frame's own presentation time maps to that frame (no float drift)", () => {
     for (const fps of [24, 25, 29.97, 30, 60]) for (let n = 0; n < 2000; n += 37) expect(frameAt(n / fps, fps)).toBe(n);
   });
-  it('seeking to timeOfFrame(n) shows frame n', () => {
-    for (const fps of [24, 30, 59.94]) for (const n of [0, 1, 2, 100, 1799]) expect(frameAt(timeOfFrame(n, fps), fps)).toBe(n);
-  });
   it('garbage input is safe', () => {
     expect(frameAt(NaN, 30)).toBe(0);
     expect(frameAt(-1, 30)).toBe(0);
     expect(frameAt(1, 0)).toBe(DEFAULT_FPS);
-    expect(timeOfFrame(-5, 30)).toBeCloseTo(0.5 / 30);
   });
   it('estimateFps: median gap, snapped to common rates, robust to drops', () => {
     expect(estimateFps([1 / 30, 1 / 30, 2 / 30, 1 / 30, 1 / 30])).toBe(30);

@@ -29,13 +29,13 @@ npm test               # tests unitarios (vitest)
 
 ## Cómo se usa
 
-1. **Importa** una o varias fotos: arrástralas, pégalas (Ctrl+V), pulsa el visor o el botón ⇪. **Cada imagen es una capa**; la primera fija el tamaño del lienzo. También puedes probar con la carta de ajuste.
+1. **Importa** fotos, **GIF animados o vídeos**: arrástralos, pégalos (Ctrl+V), pulsa el visor o el botón ⇪. **Cada archivo es una capa**; la primera fija el tamaño del lienzo. También puedes probar con la carta de ajuste. Los vídeos y GIF se reproducen solos (en silencio) con el glitch aplicado en directo; ver [Vídeo y GIF](#vídeo-y-gif).
    Mueve, escala y gira las capas directamente en el visor; el glitch se aplica a la composición en vivo.
 2. Bajo el visor está el **mini chip CCD-01**: **arrastra de un pin a otro** (o toca dos pines) para puentearlos y la imagen cambia en el momento. Hasta 3 cables; toca un cable (o su ✕) para quitarlo y ajusta su **resistencia** con el slider de su fila.
    El botón **ampliar** ⤢ (o la tecla W, o «Recablear» en la pestaña Efectos) abre la **vista ampliada**: la misma placa en grande, con la descripción de cada par y un knob de resistencia por cable. Las dos vistas comparten el estado: lo que haces en una aparece al instante en la otra.
 3. Gira **EFFECT** (intensidad global) y **FILTER** (carácter: qué hace depende de cada par).
 4. En la pestaña **Efectos** del panel derecho están el resumen de cables, seed, presets y los knobs de las **etapas extra** (en móvil, botón del panel). Editan la capa seleccionada o, sin selección, la imagen principal.
-5. **Ctrl+S** guarda el proyecto; **Capture** (Espacio) lo guarda como proyecto nuevo; **PNG/JPG** exporta a la resolución original.
+5. **Ctrl+S** guarda el proyecto; **Capturar** (la cámara de la barra superior, a la derecha del modo claro/oscuro; o Espacio si no hay vídeo) lo guarda como proyecto nuevo; **PNG/JPG** exporta a la resolución original. Con vídeo, se guarda el fotograma actual.
 
 ### Controles
 
@@ -52,7 +52,8 @@ npm test               # tests unitarios (vitest)
 | Proyectos | clic = abrir · doble clic en el nombre = renombrar · ⬇ = PNG a resolución completa · archivo = exportar `.glitch` · papelera = eliminar (dos clics) |
 | Menú de la fila de capa | botón ⋯ o clic derecho en la fila: **copiar estilo** / **pegar estilo** (efectos, cables, knobs, etapas, seed, opacidad y fusión) para pasarlo a otra capa · también Ctrl+Alt+C / Ctrl+Alt+V |
 | Menú contextual | clic derecho sobre una capa del visor: girar 90° / 180° / enderezar, espejo, copiar, cortar, pegar, duplicar, renombrar, eliminar |
-| Atajos | Ctrl+Z / Ctrl+Shift+Z (o Ctrl+Y) · Ctrl+S guardar · Ctrl+Shift+S o Espacio = guardar como nuevo · Ctrl+C / Ctrl+X / Ctrl+V capas · F2 renombrar · I = importar · Esc = cerrar |
+| Atajos | Ctrl+Z / Ctrl+Shift+Z (o Ctrl+Y) · Ctrl+S guardar · Ctrl+Shift+S (o Espacio sin vídeo) = Capturar · Ctrl+C / Ctrl+X / Ctrl+V capas · F2 renombrar · I = importar · Esc = cerrar |
+| Vídeo / GIF | **Espacio** play/pausa · **,** / **.** fotograma anterior / siguiente · **M** silencio |
 
 ### Visor y capas
 
@@ -109,10 +110,41 @@ Las capas y su posición forman parte del historial (Ctrl+Z) y de los proyectos 
 
 - **La sesión se guarda sola** en este navegador (IndexedDB, vía [idb-keyval](https://github.com/jakearchibald/idb-keyval)): capas, imágenes originales, textos, efectos y fuentes cargadas desde archivo. Al recargar o reabrir, todo vuelve. El botón de documento nuevo empieza de cero (Ctrl+Z lo deshace). Tus imágenes no salen del equipo.
 - **Proyectos guardados** (base IndexedDB propia): el documento completo (capas y su orden, visibilidad, posición, escala, giro, espejo, opacidad, fusión, textos, efectos y cables de cada capa), las imágenes originales (compartidas entre proyectos) y las fuentes de archivo. Se escribe primero cada imagen y después el proyecto, que se relee para confirmar el guardado. Un proyecto se puede exportar a un único archivo `.glitch` e importar luego, aunque se borren los datos del navegador. Las capturas de la galería de versiones anteriores se convierten en proyectos automáticamente.
-- **Tipografía de la interfaz**: Nunito y JetBrains Mono desde Google Fonts (solo los pesos usados). Es la única petición de red de la app; si no carga, se usan fuentes del sistema.
+- **Tipografía de la interfaz**: Nunito y JetBrains Mono incluidas con [Fontsource](https://fontsource.org) (solo los pesos usados, OFL). La app no hace ninguna petición de red.
 - **Modo oscuro**: botón de luna / sol en la barra superior. Por defecto sigue al sistema y recuerda tu elección.
 - **Paneles desplegables**: cada bloque del panel (Herramientas, Capas, Efectos, etapas) y cada sub-bloque de la capa (Texto, Transformar, Lienzo) se pliega con su flecha; se recuerda.
 - **Iconos**: [Lucide](https://lucide.dev) (ISC); todos los botones tienen nombre accesible y tooltip con su atajo.
+
+## Vídeo y GIF
+
+![Vídeo en escritorio](docs/screenshots/20-video-escritorio.png)
+
+| Móvil (390 px) | Controles en móvil |
+|---|---|
+| ![Vídeo en móvil](docs/screenshots/22-video-movil.png) | ![Controles en móvil](docs/screenshots/23-video-movil-controles.png) |
+
+**Formatos:** GIF animado, MP4 (H.264) y WebM (VP8/VP9/AV1), y cualquier otro que decodifique tu navegador (MOV, MKV…). Un GIF de un solo fotograma se trata como imagen. Si el navegador no puede decodificar un archivo (por ejemplo HEVC/H.265 en Chrome sin soporte de hardware, ProRes o un archivo dañado), la app lo dice con el nombre del archivo y no añade la capa.
+
+**Filtro en directo:** cada fotograma entra en el mismo pipeline que las imágenes. Todos los cables y las etapas bus, buffer y procesador se aplican mientras se reproduce. En pausa, mover cualquier knob cambia la imagen al momento. Solo se renderiza cuando hay un fotograma nuevo o cambia algo; en pausa no hay nada en marcha.
+
+**Barra de vídeo** (bajo el visor; controla el vídeo de la capa seleccionada, o el primero del documento):
+
+| Control | Acción |
+|---|---|
+| ⏮ ⏯ ⏭ | fotograma anterior · play/pausa · fotograma siguiente (**,** · **Espacio** · **.**) |
+| Barra de búsqueda | tiempo actual / total (con teclado: flechas, Inicio, Fin) |
+| Velocidad | 0,25× a 2× |
+| 🔁 | bucle activado/desactivado |
+| 🔇 + volumen | silencio (**M**) y volumen. Desactivado en GIF y en vídeos sin audio. El vídeo empieza silenciado (reglas de autoplay) |
+| **Glitch animado** | activo: el ruido cambia en cada fotograma (la seed se mezcla con el índice del fotograma); inactivo: el patrón se mantiene fijo |
+| JPEG/SORT: SOLO EN PAUSA | aviso que aparece mientras se reproduce si la capa tiene activo el codificador |
+
+- **Glitch animado está activo por defecto**: en un CCD real el ruido de lectura es distinto en cada fotograma, y un patrón fijo sobre una imagen en movimiento parece suciedad en la pantalla. Si el sistema tiene activado *reducir movimiento*, empieza desactivado. Es determinista: el mismo fotograma con la misma seed y los mismos ajustes da los mismos píxeles.
+- **Codificador (JPEG + pixel sort) solo en pausa**: cuesta unos 165 ms por fotograma (lectura de la GPU + Worker), así que el vídeo bajaría a unos 5 fps y los fotogramas llegarían tarde. Mientras se reproduce se salta y aparece el aviso; al pausar, capturar o exportar se aplica completo.
+- **Capturar** guarda el fotograma actual con los ajustes actuales, a resolución completa, como proyecto (una imagen). **PNG/JPG** exporta ese fotograma.
+- **Sesión:** al recargar la página el vídeo vuelve (el archivo se guarda en IndexedDB y se reabre sin leerlo entero en memoria). Los **proyectos** y los archivos `.glitch` guardan el fotograma actual como imagen, no el vídeo.
+- **Rendimiento medido** (Chrome, GPU integrada AMD Radeon, D3D11; cadena de 3 cables + bus + buffer + procesador): **720p: 23–28 fps; 1080p: 29–30 fps**, es decir, todos los fotogramas que entrega el vídeo (29,97 fps), con **8–12 ms** por fotograma. La vista previa se limita a 1280 px, así que 1080p cuesta casi lo mismo que 720p. Con WebGL por software (SwiftShader, el que usa `tools/verify.py`) baja a 2–7 fps.
+- **GIF:** se decodifica con `ImageDecoder` (WebCodecs: Chrome, Edge, Firefox 133+, Safari 27.3+ de escritorio). Donde no existe (Safari en iOS) se usa [omggif](https://github.com/deanm/omggif) (MIT, unos 7 KB), con un tope de 192 MB de fotogramas en memoria (por encima, se reducen y se avisa).
 
 ## Pines del CCD
 
@@ -181,8 +213,9 @@ Detalles de diseño en [PLAN.md](PLAN.md).
 
 ## Verificación
 
-- `npm test`: PRNG, serialización y saneado de presets, plan de render, aleatorio y variantes deterministas, corrupción JPEG (no rompe cabeceras ni marcadores) y pixel sort (solo reordena).
+- `npm test`: PRNG, serialización y saneado de presets, plan de render, aleatorio y variantes deterministas, corrupción JPEG (no rompe cabeceras ni marcadores), pixel sort (solo reordena) y, para vídeo, la seed por fotograma, índice de fotograma ↔ tiempo, estimación de fps, formato del tiempo, límites de velocidad y detección de GIF animado.
 - `tools/verify.py` (Playwright + Chrome): genera las hojas de contacto de `docs/screenshots/` y comprueba que los 15 pares son distintos entre sí, que cada knob altera la imagen, el determinismo (también tras recargar), la ida y vuelta de presets, la exportación a resolución completa, la importación de JPG/PNG/WebP (cada archivo como capa), el arrastre de cables y knobs, el **mini chip** (crear cable arrastrando y con teclado, slider de resistencia con deshacer, quitar cable, máximo 3, mismo estado que la vista ampliada en ambos sentidos, W abre la vista ampliada), que el visor + mini chip + knobs caben sin scroll a 1400×1000 y 1280×800, que nada desborda a 390 px, deshacer/rehacer, que no hay peticiones de red externas y que no hay errores en consola. Resultado en `docs/screenshots/verificacion.txt`.
+- `tools/verify_media.py` (lo ejecuta `verify.py`; también funciona solo): graba en el propio Chrome vídeos de prueba (WebM y MP4 a 720p/1080p con audio, un MP4 con rotación de 90° en los metadatos, un GIF animado y un archivo corrupto; ver `tools/media_fixtures.py`, sin ffmpeg) y comprueba importar, movimiento, pausa + knob, que en pausa no se renderiza en bucle, búsqueda, ±1 fotograma, velocidad, bucle, volumen, silencio, atajos, Glitch animado, el aviso del codificador, captura y export a resolución completa, el hash determinista del mismo fotograma, los fps a 720p/1080p, la rotación, GIF con `ImageDecoder` y con omggif (`?gif=omggif`), cambiar entre vídeo e imagen (y deshacer), recargar sin dejar `<video>` colgados, móvil a 390 px, cero errores en consola y cero peticiones externas.
 
 ```bash
 npm run build && npx vite preview --port 4173 &
@@ -198,7 +231,12 @@ En la consola: `window.__glitch` → `loadSample()`, `getState()`, `setState(s)`
 
 - Con el codificador activo, la vista previa llega unos milisegundos después del giro del knob (se calcula en el worker).
 - La corrupción JPEG usa el codificador del navegador: con la misma seed el resultado es idéntico en el mismo navegador, pero puede variar un poco entre motores (Chrome y Firefox).
-- Solo imágenes fijas; no hay entrada de cámara ni vídeo.
+- No se exporta vídeo ni GIF: solo el fotograma actual (PNG/JPG o Capturar). Tampoco hay entrada de cámara.
+- Mientras se reproduce no se aplican JPEG ni pixel sort (ver arriba); el resto de la cadena sí.
+- El índice de fotograma de un vídeo sale de su tiempo y de los fps estimados (el navegador no da los fps del archivo). En vídeos de fps variable el número puede saltar de dos en dos, pero ±1 siempre va al fotograma anterior o siguiente que se muestra.
+- La rotación de los metadatos la aplica el navegador. Comprobado en Chrome con un MP4 de 90°; en Firefox y Safari no se ha probado.
+- Vídeos con algún lado mayor que el límite de texturas de la GPU (normalmente 16384 px) se rechazan con un aviso.
+- Los proyectos y los `.glitch` guardan el fotograma actual, no el vídeo; la sesión del navegador sí conserva el vídeo.
 
 ## Créditos
 

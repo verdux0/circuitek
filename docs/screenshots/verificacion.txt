@@ -34,14 +34,14 @@ PASS escritorio 1400px: sin scroll horizontal  (scrollWidth 1400 / 1400)
 PASS escritorio 1400px: controles dentro del ancho
 PASS escritorio 1400px: nada se sale de la tarjeta del mini chip
 PASS escritorio 1400x1000: visor + mini chip + knobs caben sin scroll  (bottom 885)
-PASS portátil 1280x800: visor + mini chip + knobs caben sin scroll  (bottom 790)
+PASS portátil 1280x800: visor + mini chip + knobs caben sin scroll  (bottom 748)
 PASS portátil 1280px: sin scroll horizontal  (scrollWidth 1280 / 1280)
 PASS portátil 1280px: controles dentro del ancho
 PASS portátil 1280px: nada se sale de la tarjeta del mini chip
 PASS arrastrar de pin a pin crea un cable  (1 -> 2)
-PASS arrastrar el knob EFFECT cambia el valor  (50 -> 94)
+PASS arrastrar el knob EFFECT cambia el valor  (50 -> 88)
 PASS Ctrl+Z deshace el giro del knob  (50)
-PASS Ctrl+Shift+Z rehace  (94)
+PASS Ctrl+Shift+Z rehace  (88)
 PASS mini chip visible bajo el visor
 PASS mini chip: arrastrar de pin a pin crea un cable  ([{"a": "RG", "b": "TG", "amount": 100}])
 PASS mini chip: el cable cambia la imagen al momento  (66.6)
@@ -64,8 +64,54 @@ PASS móvil 390px: nada se sale de la tarjeta del mini chip
 PASS móvil: arrastrar en el mini chip crea un cable  ([{"a": "OD", "b": "HCLK", "amount": 100}])
 PASS móvil: la imagen cambia con el cable
 PASS móvil: imagen y mini chip a la vez en pantalla (sin scroll)
-FAIL ninguna petición de red externa tras la carga  (https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700;800&family=Nunito:wght@500;600;700;800;900&display=swap, https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPxDcwg.woff2, https://fonts.gstatic.com/s/nunito/v32/XRXV3I6Li01BKofINeaB.woff2)
-PASS ninguna petición de red tras la carga (salvo recargas de prueba)  (3 peticiones locales (recargas del test))
+PASS vídeos de prueba generados (WebM, GIF; MP4 si Chrome lo graba)  (anim.gif, clip-1080.mp4, clip-1080.webm, clip-720.mp4, clip-720.webm, rotado-90.mp4, roto.mp4)
+PASS importar WebM → capa de vídeo reproduciéndose (silenciada)  ({"kind": "video", "decoder": "video", "w": 1280, "h": 720, "duration": 2.965, "time": 0.385515, "frame": 0, "fps": 30, "stamp": 0, "playing": true, "speed": 1, "loop": true, "volume": 1, "muted": true, "hasAudio": true, "animate": true})
+PASS vídeo con audio: controles de volumen activos
+PASS reproduciendo: el efecto se ve en movimiento  (diferencia entre fotogramas 97.3)
+PASS fps reales con vídeo 720p (render por fotograma nuevo)  (5.3 renders/s · 5.7 fotogramas nuevos/s)
+PASS pausa → el fotograma queda quieto  (diff 0.000)
+PASS en pausa no se renderiza en bucle  (0 renders en 0,6 s)
+PASS en pausa, mover un knob cambia la imagen  (diff 105.7)
+PASS barra de búsqueda → tiempo 1,5 s  (t=1.500)
+PASS tiempo actual / total en la barra  (0:01.5 / 0:02.9)
+FAIL avanzar 1 fotograma y retroceder 1 vuelve al mismo  (22 → 22 → 21)
+FAIL atajo . avanza un fotograma (imagen distinta)  (22 → 21)
+FAIL atajo , retrocede un fotograma  (21 → 20)
+PASS mismo fotograma + misma seed + mismo estado = píxeles idénticos  (6612762dc7c7de08 6612762dc7c7de08 6612762dc7c7de08)
+PASS interruptor «Glitch animado» cambia el ruido del fotograma  (animate=False)
+PASS Glitch animado de nuevo → mismo resultado que antes (determinista)
+PASS velocidad 0,25× y 2×  (0.25 / 2)
+PASS bucle on/off
+PASS volumen 50 % activa el sonido  ({"v": 0.5, "muted": false})
+PASS botón silencio
+PASS atajo M quita el silencio
+PASS Espacio = play/pausa con vídeo
+PASS controles de vídeo con aria-label
+PASS JPEG/pixel sort: aviso «solo en pausa» mientras se reproduce  (5.5 fps con la etapa activa)
+PASS en pausa el aviso desaparece y el codificador es determinista
+PASS Capturar guarda el fotograma actual a resolución completa  ({"w": 1280, "h": 720, "media": false, "layerW": 1280, "layerH": 720})
+PASS exportar PNG con vídeo = resolución completa  ({"w": 1280, "h": 720, "bytes": 29242, "original": [1280, 720]})
+PASS cambiar de vídeo a imagen libera el reproductor
+PASS deshacer devuelve la capa de vídeo (reproductor reabierto)  ({"kind": "video", "decoder": "video", "w": 1280, "h": 720, "duration": 2.965, "time": 0, "frame": 0, "fps": 30, "stamp": 0, "playing": false, "speed": 1, "loop": true, "volume": 1, "muted": true, "hasAudio": true, "animate": true})
+PASS vídeo + GIF en el mismo documento
+PASS fps reales con vídeo 1080p  (6.3 renders/s · 6.6 fotogramas nuevos/s (clip-1080.mp4))
+PASS importar MP4 (H.264)  ({"kind": "video", "decoder": "video", "w": 1280, "h": 720, "duration": 3.025567, "time": 0.441099, "frame": 12, "fps": 30, "stamp": 1, "playing": true, "speed": 1, "loop": true, "volume": 1, "muted": true, "hasAudio": true, "animate": true})
+PASS MP4 con rotación 90° en metadatos → se ve en vertical (720×1280)  ({"w": 720, "h": 1280})
+PASS vídeo rotado: lienzo y capa también en vertical (sin aplastar)  ([720, 1280, 720, 1280])
+PASS vídeo rotado: Capturar da 720×1280  ({"w": 720, "h": 1280, "media": false, "layerW": 720, "layerH": 1280})
+PASS GIF animado con ImageDecoder: 48 fotogramas a 25 fps, en movimiento  ({"decoder": "ImageDecoder", "dur": 1.92, "fps": 25} diff 95.1)
+PASS GIF (ImageDecoder): avanzar fotograma
+PASS GIF sin audio: volumen desactivado
+PASS GIF animado con omggif: 48 fotogramas a 25 fps, en movimiento  ({"decoder": "omggif", "dur": 1.92, "fps": 25} diff 95.1)
+PASS GIF (omggif): avanzar fotograma
+PASS archivo corrupto → mensaje claro, sin capa  (No se pudo abrir «roto»: formato o códec no soportado por este navegador (¿HEVC/H.265, ProRes…?))
+PASS recargar la página reabre el vídeo de la sesión  ("video")
+PASS tras recargar: un solo <video> vivo
+PASS móvil 390 px con vídeo: sin desbordes  (scrollWidth 390 · )
+PASS vídeo/GIF: sin errores en consola
+PASS vídeo/GIF: cero peticiones de red externas
+PASS ninguna petición de red externa tras la carga
+PASS ninguna petición de red tras la carga (salvo recargas de prueba)  (11 peticiones locales (recargas del test))
 PASS sin errores en consola
 
-68/69 OK
+112/115 OK

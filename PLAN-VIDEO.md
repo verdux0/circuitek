@@ -47,9 +47,11 @@ varía mucho según el navegador; hay que medir).
    en cada fotograma es justo lo que esa preferencia pide evitar. Seed del fotograma =
    `mixSeed(seed, 0x10000 + frame)`, función pura y determinista: mismo fotograma + misma seed + mismo
    estado = mismos píxeles.
-6. **Índice de fotograma del vídeo** = `floor(t · fps + ε)`. Los fps se estiman con las diferencias de
-   `mediaTime` de `requestVideoFrameCallback` (30 hasta medirlos). Para avanzar o retroceder un fotograma se
-   busca el centro del fotograma (`(n + 0.5) / fps`).
+6. **Índice de fotograma del vídeo** = `floor(t · fps + ε)` sobre el `mediaTime` del fotograma **mostrado**. Los
+   fps se estiman con las diferencias de `mediaTime` de `requestVideoFrameCallback` (30 hasta medirlos). Avanzar
+   o retroceder un fotograma no confía en esos fps: avanzar busca un hueco de fotograma más allá y sigue hasta
+   que el fotograma presentado cambia (vídeos de fps variable, estimación con fotogramas perdidos); retroceder
+   busca medio hueco antes, que siempre muestra el fotograma anterior.
 7. **Capturar / guardar proyecto** congela cada capa de vídeo/GIF en el fotograma actual a resolución completa
    (una imagen nueva). Los proyectos y los `.glitch` siguen siendo imágenes: meter el vídeo como data URL
    en el `.glitch` no es viable. La **sesión** (recargar la página) sí conserva el vídeo: el Blob va a

@@ -4,7 +4,7 @@
  * `stamp` changes; players call `onFrame` when there are new pixels and `onState` when the
  * transport state (play / time / volume…) changes. Nothing runs while paused.
  */
-import { DEFAULT_FPS, clampSpeed, estimateFps, frameAt, timeOfFrame } from './timing';
+import { DEFAULT_FPS, clampSpeed, estimateFps, frameAt } from './timing';
 
 export interface MediaPlayer {
   readonly kind: 'video' | 'gif';
@@ -76,6 +76,9 @@ function once<T>(fn: (ok: (v: T) => void, ko: (e: Error) => void) => () => void,
   });
 }
 
+/** requestVideoFrameCallback: Chrome 83+, Firefox 132+, Safari 15.4+ (rAF fallback otherwise). */
+const hasRvfc = (v: HTMLVideoElement): boolean => typeof (v as { requestVideoFrameCallback?: unknown }).requestVideoFrameCallback === 'function';
+
 export class VideoPlayer implements MediaPlayer {
   readonly kind = 'video' as const;
   readonly el: HTMLVideoElement;
@@ -89,6 +92,13 @@ export class VideoPlayer implements MediaPlayer {
   private gaps: number[] = [];
   private lastMedia = -1;
   private lastPresented = -1;
+  /** Media time of the frame actually on screen (requestVideoFrameCallback), else currentTime. */
+  private shown = 0;
+  /** Resolves when the next frame is presented (frame stepping waits on it). */
+  private waiters: (() => void)[] = [];
+  private stepping: Promise<void> = Promise.resolve();
+  /** requestVideoFrameCallback ticks (a paused seek of a hidden video may not produce one). */
+  private ticks = 0;
   private rvfc = 0;
   private raf = 0;
   private dur = 0;
@@ -134,7 +144,7 @@ export class VideoPlayer implements MediaPlayer {
       p.w = v.videoWidth;
       p.h = v.videoHeight;
       await p.resolveDuration();
-      p.poster = await createImageBitmap(v);
+      p.poster = p.frameBitmap();
       p.bind();
       return p;
     } catch (err) {
@@ -167,12 +177,18 @@ export class VideoPlayer implements MediaPlayer {
 
   private bind(): void {
     const v = this.el;
+    const rvfc = hasRvfc(v);
+    const wake = () => {
+      const w = this.waiters;
+      this.waiters = [];
+      w.forEach((f) => f());
+    };
     const present = () => {
       if (this.disposed) return;
       this.stamp++;
       this.onFrame();
     };
-    if ('requestVideoFrameCallback' in v) {
+    if (rvfc) {
       const tick = (_now: number, meta: VideoFrameCallbackMetadata) => {
         if (this.disposed) return;
         // Consecutive presented frames while playing → frame-rate sample.
@@ -183,14 +199,30 @@ export class VideoPlayer implements MediaPlayer {
         }
         this.lastPresented = meta.presentedFrames;
         this.lastMedia = meta.mediaTime;
+        this.shown = meta.mediaTime;
+        this.ticks++;
         this.frame = frameAt(meta.mediaTime, this.fps);
         present();
+        wake();
         this.rvfc = v.requestVideoFrameCallback(tick);
       };
       this.rvfc = v.requestVideoFrameCallback(tick);
     }
     // Paused seeks may not composite a frame (hidden element): repaint on 'seeked' as well.
     v.addEventListener('seeked', () => {
+      if (!rvfc) {
+        this.shown = v.currentTime;
+        wake();
+      } else {
+        // Paused + hidden element: browsers may skip the frame callback; fall back to currentTime.
+        const t0 = this.ticks;
+        setTimeout(() => {
+          if (this.disposed || this.ticks !== t0) return;
+          this.shown = v.currentTime;
+          this.frame = frameAt(v.currentTime, this.fps);
+          wake();
+        }, 120);
+      }
       this.frame = frameAt(v.currentTime, this.fps);
       present();
       this.onState();
@@ -205,7 +237,7 @@ export class VideoPlayer implements MediaPlayer {
 
   /** Without requestVideoFrameCallback: one repaint per animation frame, only while playing. */
   private startRafFallback(): void {
-    if ('requestVideoFrameCallback' in this.el || this.raf) return;
+    if (hasRvfc(this.el) || this.raf) return;
     let last = -1;
     const loop = () => {
       this.raf = 0;
@@ -291,21 +323,68 @@ export class VideoPlayer implements MediaPlayer {
     const d = this.duration;
     this.el.currentTime = Math.max(0, d ? Math.min(d, t) : t);
   }
+  /**
+   * ±n frames by what is actually presented, not by an assumed frame rate: forward seeks one
+   * frame slot past the shown frame and keeps going until the presented frame changes
+   * (variable frame rate, dropped-frame fps estimates); backward needs one seek, since any
+   * time between the previous frame and the shown one displays the previous frame.
+   */
   step(n: number): void {
     this.pause();
-    const last = this.duration ? frameAt(this.duration, this.fps) - 1 : Infinity;
-    const target = Math.max(0, Math.min(last, frameAt(this.el.currentTime, this.fps) + n));
-    this.seek(timeOfFrame(target, this.fps));
+    this.stepping = this.stepping.then(async () => {
+      const slot = 1 / this.fps;
+      for (let k = 0; k < Math.abs(n); k++) {
+        const from = this.shown;
+        if (n < 0) {
+          if (from <= 1e-4) break;
+          // Half a slot back, or the middle of the previous nominal frame when `shown` is only a
+          // seek target (no frame callback): both land on the previous frame.
+          await this.seekShown(Math.max(0, Math.min(from - slot / 2, (frameAt(from, this.fps) - 0.5) * slot)));
+          continue;
+        }
+        const end = this.duration || Infinity;
+        let t = from + slot + 1e-4;
+        // One slot at a time (never skips a frame) for up to ~1 s of footage: very irregular
+        // files can hold a frame for many nominal slots.
+        const tries = Math.max(6, Math.ceil(this.fps));
+        for (let i = 0; i < tries && t < end; i++, t += slot) {
+          await this.seekShown(t);
+          if (this.shown > from + 1e-4) break;
+        }
+      }
+    });
+  }
+  /** Seeks and waits until the frame for that time is presented (or a short timeout). */
+  private seekShown(t: number): Promise<void> {
+    const v = this.el;
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(done, 400);
+      function done() {
+        clearTimeout(timer);
+        resolve();
+      }
+      this.waiters.push(done);
+      v.currentTime = t;
+    });
   }
   snapshot(): Promise<ImageBitmap> {
-    return createImageBitmap(this.el);
+    return Promise.resolve(this.frameBitmap());
+  }
+  /**
+   * Current frame as displayed (w × h). drawImage applies the rotation metadata like
+   * texImage2D does; createImageBitmap(video) does not, which would squash rotated videos.
+   */
+  private frameBitmap(): ImageBitmap {
+    const c = new OffscreenCanvas(this.w, this.h);
+    c.getContext('2d')!.drawImage(this.el, 0, 0, this.w, this.h);
+    return c.transferToImageBitmap();
   }
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.stopRaf();
     const v = this.el;
-    if (this.rvfc && 'cancelVideoFrameCallback' in v) v.cancelVideoFrameCallback(this.rvfc);
+    if (this.rvfc && hasRvfc(v)) v.cancelVideoFrameCallback(this.rvfc);
     v.pause();
     // Release the decoder and the file: empty src + load() is what actually frees them.
     v.removeAttribute('src');

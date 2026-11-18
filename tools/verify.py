@@ -11,6 +11,9 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 from PIL import Image, ImageDraw, ImageFont
 
+sys.path.insert(0, str(Path(__file__).parent))
+from verify_media import run as run_media
+
 URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:4173/"
 OUT = Path(sys.argv[2] if len(sys.argv) > 2 else "docs/screenshots")
 OUT.mkdir(parents=True, exist_ok=True)
@@ -24,7 +27,7 @@ CHROME = _first([os.environ.get("GLITCH_CHROME"), "/usr/bin/google-chrome", shut
                  r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"])
 _font = _first(["/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", r"C:\Windows\Fonts\consola.ttf"])
 FONT = ImageFont.truetype(_font, 15) if _font else ImageFont.load_default()
-CHROME_ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"]
+CHROME_ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "--autoplay-policy=no-user-gesture-required"]
 
 PINS = ["SUB", "RG", "OD", "TG", "AB", "HCLK"]
 PAIRS = [(PINS[i], PINS[j]) for i in range(6) for j in range(i + 1, 6)]
@@ -399,6 +402,9 @@ async def main():
         await mob.click("#btn-rack"); await mob.wait_for_timeout(300)
         await mob.click("#btn-rewire"); await mob.wait_for_timeout(300)
         await mob.screenshot(path=str(OUT / "12-movil-rewire.png"))
+
+        # ---- video / GIF (own contexts, fixtures recorded in this Chrome) ----
+        await run_media(browser, URL, OUT, check, Path(tempfile.gettempdir()) / "ge-media")
 
         external = [u for u in requests if not u.startswith(URL) and not u.startswith("blob:") and not u.startswith("data:")]
         check("ninguna petición de red externa tras la carga", not external, ", ".join(external[:5]))

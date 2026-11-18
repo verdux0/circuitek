@@ -13,6 +13,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from media_fixtures import make_fixtures
 
 MEDIA_ARGS = ["--autoplay-policy=no-user-gesture-required"]
+# Requests that left the page's own origin (must stay empty: 100 % local).
+EXTERNAL = []
 
 async def grab(pg):
     url = await pg.evaluate("document.getElementById('screen').toDataURL('image/png')")
@@ -37,6 +39,8 @@ async def settle(pg, ms=250):
 async def open_with(browser, url, files_path, vw=1400, vh=1000, mobile=False, errors=None):
     ctx = await browser.new_context(viewport={"width": vw, "height": vh}, device_scale_factor=2 if mobile else 1, is_mobile=mobile, has_touch=mobile)
     pg = await ctx.new_page()
+    base = url.split("?")[0]
+    pg.on("request", lambda r: EXTERNAL.append(r.url) if not (r.url.startswith(base) or r.url.startswith(("blob:", "data:"))) else None)
     if errors is not None:
         pg.on("console", lambda m: errors.append(f"console.{m.type}: {m.text}") if m.type == "error" else None)
         pg.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
@@ -50,6 +54,17 @@ async def open_with(browser, url, files_path, vw=1400, vh=1000, mobile=False, er
             await pg.wait_for_timeout(100)
         await pg.wait_for_timeout(400)
     return ctx, pg
+
+async def frame_after(pg, until, timeout=5000):
+    """Polls the media frame until `until(frame)` holds (a step can chain several seeks on VFR files)."""
+    f = (await info(pg))["frame"]
+    for _ in range(timeout // 100):
+        if until(f):
+            break
+        await pg.wait_for_timeout(100)
+        f = (await info(pg))["frame"]
+    await settle(pg, 200)
+    return f
 
 async def measure_fps(pg, secs=3.0):
     """Real preview fps while playing (renders per second, one per new video frame)."""
@@ -102,15 +117,19 @@ async def run(browser, url, out: Path, check, fixtures_dir: Path):
     label = await pg.evaluate("document.getElementById('mb-time').textContent")
     check("tiempo actual / total en la barra", label.startswith("0:01.") and "/ 0:02." in label, label)
     f0 = m["frame"]
-    await pg.click("#mb-next"); await settle(pg, 400)
-    f1 = (await info(pg))["frame"]
-    await pg.click("#mb-prev"); await settle(pg, 400)
-    f2 = (await info(pg))["frame"]
-    check("avanzar 1 fotograma (+1) y retroceder (−1)", f1 == f0 + 1 and f2 == f0, f"{f0} → {f1} → {f2}")
-    await pg.keyboard.press("."); await settle(pg, 400)
-    f3 = (await info(pg))["frame"]
-    check("atajo . avanza un fotograma", f3 == f0 + 1, f"{f0} → {f3}")
-    await pg.keyboard.press(","); await settle(pg, 400)
+    await pg.click("#mb-next")
+    f1 = await frame_after(pg, lambda f: f > f0)
+    await pg.click("#mb-prev")
+    f2 = await frame_after(pg, lambda f: f < f1)
+    # +1 = the next frame actually presented (index can jump on variable-frame-rate files); −1 = back to the same one.
+    a1 = await pg.evaluate("window.__glitch.hash()")
+    check("avanzar 1 fotograma y retroceder 1 vuelve al mismo", f1 > f0 and f2 == f0, f"{f0} → {f1} → {f2}")
+    await pg.keyboard.press(".")
+    f3 = await frame_after(pg, lambda f: f > f2)
+    check("atajo . avanza un fotograma (imagen distinta)", f3 == f1 and await pg.evaluate("window.__glitch.hash()") != a1, f"{f0} → {f3}")
+    await pg.keyboard.press(",")
+    f4 = await frame_after(pg, lambda f: f < f3)
+    check("atajo , retrocede un fotograma", f4 == f2, f"{f3} → {f4}")
 
     # determinism: same frame + same seed + same state = identical pixels (also after seeking away and back)
     h1 = await pg.evaluate("window.__glitch.hash()")
@@ -216,6 +235,12 @@ async def run(browser, url, out: Path, check, fixtures_dir: Path):
         ctx, pg = await open_with(browser, url, files["rotado-90.mp4"], errors=errors)
         m = await info(pg)
         check("MP4 con rotación 90° en metadatos → se ve en vertical (720×1280)", bool(m) and (m["w"], m["h"]) == (720, 1280), json.dumps(m and {"w": m["w"], "h": m["h"]}))
+        dims = await pg.evaluate("(() => { const d = window.__glitch.getDoc(); const l = d.layers[0]; return [d.w, d.h, l.w, l.h]; })()")
+        check("vídeo rotado: lienzo y capa también en vertical (sin aplastar)", dims == [720, 1280, 720, 1280], str(dims))
+        await pg.click("#mb-play"); await settle(pg)
+        await pg.click("#btn-capture"); await pg.wait_for_timeout(1500)
+        still = await pg.evaluate("window.__glitch.newestProjectStill()")
+        check("vídeo rotado: Capturar da 720×1280", bool(still) and (still["w"], still["h"]) == (720, 1280), json.dumps(still))
         await pg.screenshot(path=str(out / "21-video-rotado.png"))
         await ctx.close()
 
@@ -243,9 +268,10 @@ async def run(browser, url, out: Path, check, fixtures_dir: Path):
 
     # ---- reload keeps the video (session) and leaves nothing behind ----
     ctx, pg = await open_with(browser, url, files["clip-720.webm"], errors=errors)
-    await pg.wait_for_timeout(1500)  # session save (debounced)
+    await pg.wait_for_timeout(500)
+    await pg.evaluate("window.__glitch.session().flush()")  # session save (debounced) with the video Blob
     await pg.reload(); await pg.wait_for_load_state("networkidle")
-    for _ in range(60):
+    for _ in range(200):
         if await info(pg): break
         await pg.wait_for_timeout(100)
     m = await info(pg)
@@ -265,6 +291,7 @@ async def run(browser, url, out: Path, check, fixtures_dir: Path):
     await ctx.close()
 
     check("vídeo/GIF: sin errores en consola", not errors, " | ".join(errors[:5]))
+    check("vídeo/GIF: cero peticiones de red externas", not EXTERNAL, ", ".join(EXTERNAL[:5]))
     return results
 
 async def _main():
