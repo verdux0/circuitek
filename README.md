@@ -35,7 +35,7 @@ npm test               # tests unitarios (vitest)
    El botón **ampliar** ⤢ (o la tecla W, o «Recablear» en la pestaña Efectos) abre la **vista ampliada**: la misma placa en grande, con la descripción de cada par y un knob de resistencia por cable. Las dos vistas comparten el estado: lo que haces en una aparece al instante en la otra.
 3. Gira **EFFECT** (intensidad global) y **FILTER** (carácter: qué hace depende de cada par).
 4. En la pestaña **Efectos** del panel derecho están el resumen de cables, seed, presets y los knobs de las **etapas extra** (en móvil, botón del panel). Editan la capa seleccionada o, sin selección, la imagen principal.
-5. **Ctrl+S** guarda el proyecto; **Capturar** (la cámara de la barra superior, a la derecha del modo claro/oscuro; o Espacio si no hay vídeo) lo guarda como proyecto nuevo; **PNG/JPG** exporta a la resolución original. Con vídeo, se guarda el fotograma actual.
+5. **Ctrl+S** guarda el proyecto; **Capturar** (la cámara de la barra superior, a la derecha del modo claro/oscuro; o Espacio si no hay vídeo) lo guarda como proyecto nuevo; **Exportar ▾** (panel Herramientas) guarda PNG, JPG, GIF o MP4 (ver [Exportar](#exportar)) a la resolución original. Con vídeo, se guarda el fotograma actual.
 
 ### Controles
 
@@ -141,10 +141,51 @@ Las capas y su posición forman parte del historial (Ctrl+Z) y de los proyectos 
 
 - **Glitch animado está activo por defecto**: en un CCD real el ruido de lectura es distinto en cada fotograma, y un patrón fijo sobre una imagen en movimiento parece suciedad en la pantalla. Si el sistema tiene activado *reducir movimiento*, empieza desactivado. Es determinista: el mismo fotograma con la misma seed y los mismos ajustes da los mismos píxeles.
 - **Codificador (JPEG + pixel sort) solo en pausa**: cuesta unos 165 ms por fotograma (lectura de la GPU + Worker), así que el vídeo bajaría a unos 5 fps y los fotogramas llegarían tarde. Mientras se reproduce se salta y aparece el aviso; al pausar, capturar o exportar se aplica completo.
-- **Capturar** guarda el fotograma actual con los ajustes actuales, a resolución completa, como proyecto (una imagen). **PNG/JPG** exporta ese fotograma.
+- **Capturar** guarda el fotograma actual con los ajustes actuales, a resolución completa, como proyecto (una imagen). **Exportar** en PNG/JPG guarda ese fotograma; en GIF/MP4, la animación (ver [Exportar](#exportar)).
 - **Sesión:** al recargar la página el vídeo vuelve (el archivo se guarda en IndexedDB y se reabre sin leerlo entero en memoria). Los **proyectos** y los archivos `.glitch` guardan el fotograma actual como imagen, no el vídeo.
 - **Rendimiento medido** (Chrome, GPU integrada AMD Radeon, D3D11; cadena de 3 cables + bus + buffer + procesador): **720p: 23–28 fps; 1080p: 29–30 fps**, es decir, todos los fotogramas que entrega el vídeo (29,97 fps), con **8–12 ms** por fotograma. La vista previa se limita a 1280 px, así que 1080p cuesta casi lo mismo que 720p. Con WebGL por software (SwiftShader, el que usa `tools/verify.py`) baja a 2–7 fps.
 - **GIF:** se decodifica con `ImageDecoder` (WebCodecs: Chrome, Edge, Firefox 133+, Safari 27.3+ de escritorio). Donde no existe (Safari en iOS) se usa [omggif](https://github.com/deanm/omggif) (MIT, unos 7 KB), con un tope de 192 MB de fotogramas en memoria (por encima, se reducen y se avisa).
+
+## Exportar
+
+| Lista de formatos | Opciones (MP4 desde vídeo) | Móvil |
+|---|---|---|
+| ![Menú de exportación](docs/screenshots/30-export-menu.png) | ![Diálogo MP4](docs/screenshots/33-export-dialogo-mp4.png) | ![Diálogo en móvil](docs/screenshots/35-export-movil-dialogo.png) |
+
+En el panel **Herramientas**, **Exportar · PNG ▾**:
+- **Exportar** (el botón grande) exporta directamente con el formato y los ajustes **predeterminados**, sin abrir nada. Muestra progreso y botón *Cancelar*.
+- **▾** abre la lista de formatos: **PNG, JPG, GIF y MP4**. Los que no tienen sentido con lo cargado salen **desactivados con el motivo** (por ejemplo GIF/MP4 con una imagen fija sin «Glitch animado»). Se maneja con flechas, Inicio/Fin, Intro y Esc, y en móvil tiene filas de 44 px.
+- Al elegir un formato se abre el **diálogo de opciones** (a pantalla completa en móvil):
+
+| Formato | Opciones |
+|---|---|
+| PNG | escala (25 %–400 %) |
+| JPG | calidad (1–100) y escala |
+| GIF | ancho máximo, fps, colores (2–256), dithering (ordenado Bayer · Floyd–Steinberg · ninguno), duración, repeticiones (0 = infinito), bucle con vídeo (fundido cruzado · ida y vuelta · recortar), solape del fundido y, en animaciones generadas, el pulso del EFFECT. Muestra el tamaño estimado y avisa si es enorme o si los fps no cuadran con las centésimas del GIF |
+| MP4 | resolución (original … 360p), fps, calidad, rango *desde/hasta* (vídeo) o duración (animación generada), y audio. El diálogo dice si el audio se incluye (AAC) o por qué no |
+
+- **Nombre del archivo:** plantilla editable con `{nombre} {seed} {fecha} {hora} {formato} {ancho} {alto}` (por defecto `{nombre}-{seed}-{fecha}`) y vista previa del nombre final. Los caracteres no válidos se sustituyen y nunca se sobrescribe un archivo existente (se añade «(2)»).
+- **Ubicación:** en Chrome y Edge, **Elegir carpeta…** (File System Access API). La carpeta se recuerda y el navegador vuelve a pedir permiso cuando caduca. En Firefox y Safari esa API no existe, así que el diálogo avisa de que el archivo va a la carpeta que decida el navegador (normalmente Descargas).
+- **Usar como predeterminado** guarda el formato, los ajustes, la plantilla y la carpeta para el botón Exportar. Persiste entre sesiones; **Restablecer predeterminados** vuelve a los de fábrica.
+- **Cancelar** en cualquier momento: no queda ningún archivo a medias. En una carpeta se escribe en streaming y no se confirma hasta el final; si cancelas, se descarta y se borra la entrada. Como descarga, no se descarga nada.
+
+**Cómo se exporta:** fotograma a fotograma y fuera de tiempo real, con el mismo pipeline (todas las etapas, incluido JPEG/pixel sort), nunca grabando la pantalla. El resultado no depende de la potencia del equipo, y el mismo estado en el mismo instante da los mismos píxeles: dos exportaciones iguales salen idénticas byte a byte. Los vídeos se leen fotograma exacto con [Mediabunny](https://mediabunny.dev) en vez de buscar en el `<video>`. El GIF se cuantiza y codifica en un **Worker** y se escribe por trozos. La interfaz sigue respondiendo durante la exportación.
+
+**GIF en bucle perfecto:**
+- *Animación generada* (imagen fija con «Glitch animado», interruptor en Efectos): el ruido de cada fotograma es `frameSeed(seed, i)` con *i* = 0…N−1, y el pulso opcional del EFFECT es `sin(2π·k·i/N)` con *k* ciclos enteros. Todo es periódico con N, así que el último fotograma enlaza con el primero como un paso más.
+- *Vídeo de entrada:* **fundido cruzado** (predeterminado), **ida y vuelta** o **recortar al bucle más cercano** (busca el corte, entre la mitad y el final, cuyo fotograma más se parece al primero). El fundido es el predeterminado porque vale para cualquier vídeo y no invierte el movimiento. Durante el solape mezcla el final con el principio, de modo que el salto del último fotograma al primero es un paso normal.
+- **Paleta global** (una para toda la animación, con fotogramas de muestra): los colores no saltan entre fotogramas ni en la costura. **Dithering ordenado por defecto:** es estable en el tiempo; Floyd–Steinberg «hierve» de un fotograma a otro.
+- Bloque **NETSCAPE2.0** con repeticiones = 0 (infinito) por defecto. Los retardos van en centésimas: con 50, 33,3, 25, 20, 16,7, 12,5 o 10 fps son exactos. Con otros (p. ej. 30 fps) se reparten 3-3-4 cs para que la media sea exacta, y el diálogo lo avisa. Más de 50 fps no es fiable en GIF y se limita.
+
+**Compatibilidad por navegador:**
+
+| | Chrome / Edge | Firefox | Safari |
+|---|---|---|---|
+| PNG / JPG | sí | sí | sí |
+| GIF | sí | sí | sí (en iOS, los GIF de entrada se leen con omggif) |
+| MP4 (H.264 + AAC, WebCodecs) | sí (94+; comprobado en Chrome 146 de Windows, también sin interfaz) | 130+, si el sistema tiene H.264; si no, **WebM (VP9)** | 16.4+ (no comprobado) |
+| Sin `VideoEncoder` | — | MP4 desactivado con el motivo | MP4 desactivado con el motivo |
+| Elegir carpeta | sí (86+) | no: descarga normal, avisado | no: descarga normal, avisado |
 
 ## Pines del CCD
 
@@ -215,6 +256,7 @@ Detalles de diseño en [PLAN.md](PLAN.md).
 
 - `npm test`: PRNG, serialización y saneado de presets, plan de render, aleatorio y variantes deterministas, corrupción JPEG (no rompe cabeceras ni marcadores), pixel sort (solo reordena) y, para vídeo, la seed por fotograma, índice de fotograma ↔ tiempo, estimación de fps, formato del tiempo, límites de velocidad y detección de GIF animado.
 - `tools/verify.py` (Playwright + Chrome): genera las hojas de contacto de `docs/screenshots/` y comprueba que los 15 pares son distintos entre sí, que cada knob altera la imagen, el determinismo (también tras recargar), la ida y vuelta de presets, la exportación a resolución completa, la importación de JPG/PNG/WebP (cada archivo como capa), el arrastre de cables y knobs, el **mini chip** (crear cable arrastrando y con teclado, slider de resistencia con deshacer, quitar cable, máximo 3, mismo estado que la vista ampliada en ambos sentidos, W abre la vista ampliada), que el visor + mini chip + knobs caben sin scroll a 1400×1000 y 1280×800, que nada desborda a 390 px, deshacer/rehacer, que no hay peticiones de red externas y que no hay errores en consola. Resultado en `docs/screenshots/verificacion.txt`.
+- `tools/verify_export.py` (lo ejecuta `verify.py`; también funciona solo): botón y lista (role=menu, teclado, formatos desactivados con su motivo), PNG por defecto (firma, tamaño y nombre de plantilla), JPG desde el diálogo (calidad, escala, vista previa del nombre, se decodifica), predeterminado tras recargar y restablecer, GIF generado y de vídeo con los tres modos de bucle (cabecera, NETSCAPE2.0 infinito, número de fotogramas, retardos, tamaño y **costura último → primero frente al paso normal**), aviso y reparto de retardos a 30 fps, MP4 generado y de vídeo (H.264, tamaño, fps, duración, audio AAC, con el parser de Mediabunny) que se reproduce en un `<video>`, determinismo (dos GIF idénticos byte a byte), exportar a carpeta (una carpeta OPFS en lugar del selector nativo, que Playwright no puede manejar), cancelar MP4 y GIF a mitad sin dejar archivo, interfaz viva durante la exportación, y lista y diálogo en móvil.
 - `tools/verify_media.py` (lo ejecuta `verify.py`; también funciona solo): graba en el propio Chrome vídeos de prueba (WebM y MP4 a 720p/1080p con audio, un MP4 con rotación de 90° en los metadatos, un GIF animado y un archivo corrupto; ver `tools/media_fixtures.py`, sin ffmpeg) y comprueba importar, movimiento, pausa + knob, que en pausa no se renderiza en bucle, búsqueda, ±1 fotograma, velocidad, bucle, volumen, silencio, atajos, Glitch animado, el aviso del codificador, captura y export a resolución completa, el hash determinista del mismo fotograma, los fps a 720p/1080p, la rotación, GIF con `ImageDecoder` y con omggif (`?gif=omggif`), cambiar entre vídeo e imagen (y deshacer), recargar sin dejar `<video>` colgados, móvil a 390 px, cero errores en consola y cero peticiones externas.
 
 ```bash
@@ -231,12 +273,13 @@ En la consola: `window.__glitch` → `loadSample()`, `getState()`, `setState(s)`
 
 - Con el codificador activo, la vista previa llega unos milisegundos después del giro del knob (se calcula en el worker).
 - La corrupción JPEG usa el codificador del navegador: con la misma seed el resultado es idéntico en el mismo navegador, pero puede variar un poco entre motores (Chrome y Firefox).
-- No se exporta vídeo ni GIF: solo el fotograma actual (PNG/JPG o Capturar). Tampoco hay entrada de cámara.
+- No hay entrada de cámara.
 - Mientras se reproduce no se aplican JPEG ni pixel sort (ver arriba); el resto de la cadena sí.
 - El índice de fotograma de un vídeo sale de su tiempo y de los fps estimados (el navegador no da los fps del archivo). En vídeos de fps variable el número puede saltar de dos en dos, pero ±1 siempre va al fotograma anterior o siguiente que se muestra.
 - La rotación de los metadatos la aplica el navegador. Comprobado en Chrome con un MP4 de 90°; en Firefox y Safari no se ha probado.
 - Vídeos con algún lado mayor que el límite de texturas de la GPU (normalmente 16384 px) se rechazan con un aviso.
 - Los proyectos y los `.glitch` guardan el fotograma actual, no el vídeo; la sesión del navegador sí conserva el vídeo.
+- **Exportar:** como máximo 3600 fotogramas por GIF/MP4 (aviso a partir de 1500). Exportar es lento a propósito, porque cada fotograma pasa por todo el pipeline, codificador incluido. El MP4 sin carpeta elegida se monta en memoria antes de descargarse (con carpeta va en streaming). El audio solo sale del primer vídeo visible y solo dentro de su duración. Safari y Firefox no se han probado.
 
 ## Créditos
 

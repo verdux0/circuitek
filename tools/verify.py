@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).parent))
 from verify_media import run as run_media
+from verify_export import run as run_export
 
 URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:4173/"
 OUT = Path(sys.argv[2] if len(sys.argv) > 2 else "docs/screenshots")
@@ -297,12 +298,12 @@ async def main():
         ex = await pg.evaluate("window.__glitch.exportSize('image/png')")
         check("export a resolución original", ex["w"] == ex["original"][0] and ex["h"] == ex["original"][1], json.dumps(ex))
         async with pg.expect_download() as dl:
-            await pg.click("#btn-png")
+            await pg.click("#btn-export")  # main export button: PNG by default
         d = await dl.value
         path = OUT / "export-ejemplo.png"
         await d.save_as(str(path))
         exp = Image.open(path)
-        check("botón PNG descarga a resolución completa", exp.size == (1600, 1200), str(exp.size))
+        check("botón Exportar (PNG predeterminado) descarga a resolución completa", exp.size == (1600, 1200), str(exp.size))
         exp.convert("RGB").resize((800, 600)).save(OUT / "05-export-reducido.jpg", quality=88)
         path.unlink()
 
@@ -405,6 +406,8 @@ async def main():
 
         # ---- video / GIF (own contexts, fixtures recorded in this Chrome) ----
         await run_media(browser, URL, OUT, check, Path(tempfile.gettempdir()) / "ge-media")
+        # ---- export: button ▾, dialog, PNG / JPG / GIF / MP4 files ----
+        await run_export(browser, URL, OUT, check, Path(tempfile.gettempdir()) / "ge-media")
 
         external = [u for u in requests if not u.startswith(URL) and not u.startswith("blob:") and not u.startswith("data:")]
         check("ninguna petición de red externa tras la carga", not external, ", ".join(external[:5]))
