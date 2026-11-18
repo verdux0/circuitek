@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 sys.path.insert(0, str(Path(__file__).parent))
 from verify_media import run as run_media
 from verify_export import run as run_export
+from verify_gifsearch import run as run_gifsearch
 
 URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:4173/"
 OUT = Path(sys.argv[2] if len(sys.argv) > 2 else "docs/screenshots")
@@ -408,6 +409,8 @@ async def main():
         await run_media(browser, URL, OUT, check, Path(tempfile.gettempdir()) / "ge-media")
         # ---- export: button ▾, dialog, PNG / JPG / GIF / MP4 files ----
         await run_export(browser, URL, OUT, check, Path(tempfile.gettempdir()) / "ge-media")
+        # ---- GIF search (network intercepted: nothing reaches the Internet Archive) ----
+        await run_gifsearch(browser, URL, OUT, check)
 
         external = [u for u in requests if not u.startswith(URL) and not u.startswith("blob:") and not u.startswith("data:")]
         check("ninguna petición de red externa tras la carga", not external, ", ".join(external[:5]))

@@ -22,6 +22,7 @@ import { LayersPanel } from './ui/layers';
 import { hydrateIcons } from './ui/icons';
 import { initCollapsibles } from './ui/collapse';
 import { ExportUI } from './ui/exportui';
+import { GifSearchPanel } from './ui/gifsearch';
 import { sanitizeSettings } from './export/settings';
 import { GifPlayer, VideoPlayer, mediaKind, type MediaPlayer } from './media/player';
 import { SPEEDS, formatTime, frameSeed, spokenTime } from './media/timing';
@@ -1430,7 +1431,7 @@ window.addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement;
   if (t.matches('input, select, textarea')) return;
   // The export dialog / progress own the keyboard (Esc is handled there).
-  if (exportUi.dialogOpen || exportUi.busy) return;
+  if (exportUi.dialogOpen || exportUi.busy || gifSearch.isOpen) return;
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key.toLowerCase() === 'z') {
     e.preventDefault();
@@ -1504,6 +1505,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'r') applyToTarget(randomState(freshSeed()));
   else if (k === 'v') void showVariants();
   else if (k === 'i') pickFile();
+  else if (k === 'g') gifSearch.open();
   else if (k === 't' && !e.repeat) {
     e.preventDefault();
     void addTextLayer();
@@ -1638,6 +1640,12 @@ const exportUi = new ExportUI(
   $<HTMLButtonElement>('btn-export-menu'),
 );
 $('progress-cancel').addEventListener('click', () => exportUi.cancel());
+
+/* ------------------------------ GIF search (GifCities · Internet Archive) ------------------------------ */
+// Nothing is requested until the user searches inside the panel.
+const gifSearch = new GifSearchPanel({ toast, importFile: (f) => importFiles([f]) });
+document.body.append(gifSearch.el);
+$('btn-gifsearch').addEventListener('click', () => gifSearch.open());
 function layerEdit(id: string, fn: (l: Layer) => void): void {
   editDoc((d) => {
     const l = getLayer(d, id);
