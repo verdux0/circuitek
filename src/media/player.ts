@@ -639,6 +639,18 @@ export class GifPlayer implements MediaPlayer {
   snapshot(): Promise<ImageBitmap> {
     return createImageBitmap(this.cur ?? this.poster);
   }
+  /** Frame index shown at time t (s), looping (exports read GIF layers by time). */
+  indexAt(t: number): number {
+    const ms = (((t * 1000) % this.total) + this.total) % this.total;
+    let i = 0;
+    while (i + 1 < this.starts.length && this.starts[i + 1] <= ms) i++;
+    return i;
+  }
+  /** The frame at time t; `release()` when done with it (cached frames are kept). */
+  async imageAt(t: number): Promise<{ img: ImageBitmap; release: () => void }> {
+    const img = await this.src.get(this.indexAt(t));
+    return { img, release: () => { if (!this.src.cached) img.close(); } };
+  }
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;

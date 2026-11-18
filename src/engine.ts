@@ -106,6 +106,16 @@ export class Engine {
     return p ? this.enc.run(img, p, encSeed(job.global!)) : img;
   }
 
+  /** A renderer with its own WebGL context and pixel provider (exports render frame by frame). */
+  exportRenderer(provider: SourceProvider): GLRenderer {
+    return new GLRenderer(provider, (img, p, seed) => this.enc.run(img, p, seed));
+  }
+
+  /** Every stage (encoders awaited) at w × h with renderer `r`: one exported frame. */
+  renderWith(r: GLRenderer, doc: DocState, w: number, h: number): Promise<ImageData> {
+    return this.finish(r, { doc, global: null, layerFx: true, w, h });
+  }
+
   async renderThumb(doc: DocState, global: GlitchState | null): Promise<ImageData> {
     const [w, h] = fitSize(doc.w, doc.h, THUMB_MAX);
     return this.finish(this.gl, { doc, global, layerFx: true, w, h });
@@ -118,16 +128,20 @@ export class Engine {
   }
 
   /** Renders the document at full resolution and encodes it to PNG or JPEG. */
-  async exportFull(doc: DocState, global: GlitchState | null, type: 'image/png' | 'image/jpeg', onStep: (msg: string) => void = () => {}): Promise<{ blob: Blob; w: number; h: number }> {
-    const { w, h } = doc;
+  async exportFull(
+    doc: DocState, global: GlitchState | null, type: 'image/png' | 'image/jpeg', onStep: (msg: string) => void = () => {},
+    opts: { scale?: number; quality?: number; provider?: SourceProvider } = {},
+  ): Promise<{ blob: Blob; w: number; h: number }> {
+    const k = opts.scale ?? 1;
+    const [w, h] = fitSize(Math.max(1, Math.round(doc.w * k)), Math.max(1, Math.round(doc.h * k)), this.maxSize);
     onStep(`GPU ${w}×${h} · ${doc.layers.length} capa${doc.layers.length === 1 ? '' : 's'}`);
-    const r = new GLRenderer(this.provider, (img, p, seed) => this.enc.run(img, p, seed));
+    const r = new GLRenderer(opts.provider ?? this.provider, (img, p, seed) => this.enc.run(img, p, seed));
     try {
       const img = await this.finish(r, { doc, global, layerFx: true, w, h }, true);
       onStep('Codificando');
       const cv = new OffscreenCanvas(w, h);
       cv.getContext('2d')!.putImageData(img, 0, 0);
-      const blob = await cv.convertToBlob(type === 'image/jpeg' ? { type, quality: 0.95 } : { type });
+      const blob = await cv.convertToBlob(type === 'image/jpeg' ? { type, quality: opts.quality ?? 0.95 } : { type });
       return { blob, w, h };
     } finally {
       r.dispose();

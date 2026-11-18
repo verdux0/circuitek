@@ -1,6 +1,6 @@
 import { COMP_FRAG, FRAG, LAYER_FRAG, LAYER_VERT, VERT } from './shaders';
 import { buildGpuPasses, encParams, encSeed, type EncParams, type GlitchState, type GpuPass } from '../model';
-import { BLENDS, layerMatrix, type DocState, type Layer } from '../doc';
+import { BLENDS, layerAnimates, layerMatrix, type DocState, type Layer } from '../doc';
 import { frameSeed } from '../media/timing';
 
 /**
@@ -68,6 +68,11 @@ export interface SourceRef {
   stamp?: number;
   /** Skip the encoder stage (JPEG / pixel sort) in this render: the media is playing. */
   liveOnly?: boolean;
+  /**
+   * Frame index for the noise seed of animated layers ("Glitch animado"), when it differs from
+   * `frame` (exports: output frame i, also for still layers). Defaults to `frame`.
+   */
+  noise?: number;
 }
 export interface SourceProvider {
   /** `pxScale` = output pixels per layer pixel. */
@@ -263,8 +268,9 @@ export class GLRenderer {
   /** Effects of a layer for this frame: animated media mixes the frame index into the seed. */
   private static frameFx(l: Layer, ref: SourceRef): GlitchState {
     const fx = l.fx!;
-    if (ref.frame === undefined || !l.media?.animate) return fx;
-    return { ...fx, seed: frameSeed(fx.seed, ref.frame, true) };
+    const n = ref.noise ?? ref.frame;
+    if (n === undefined || !layerAnimates(l)) return fx;
+    return { ...fx, seed: frameSeed(fx.seed, n, true) };
   }
 
   private dropSource(key: string): void {
@@ -377,7 +383,7 @@ export class GLRenderer {
   /* ------------------------------ per-layer cache ------------------------------ */
 
   private cacheKey(l: Layer, ref: SourceRef, job: RenderJob): string {
-    return JSON.stringify([ref.key, ref.frame ?? null, ref.stamp ?? null, l.media?.animate ?? null, l.w, l.h, l.x, l.y, l.scaleX, l.scaleY, l.rotation, l.flipX, l.flipY, l.fx, job.w, job.h, job.doc.w, job.doc.h]);
+    return JSON.stringify([ref.key, ref.frame ?? null, ref.stamp ?? null, ref.noise ?? null, layerAnimates(l), l.w, l.h, l.x, l.y, l.scaleX, l.scaleY, l.rotation, l.flipX, l.flipY, l.fx, job.w, job.h, job.doc.w, job.doc.h]);
   }
 
   /**

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ditherToIndex } from '../src/export/dither';
 import {
   DEFAULT_TEMPLATE, defaultSettings, estimateGifBytes, gifSize, gifTiming, loopFrameCount, loopSample, mp4Bitrate, mp4Size,
   pulseEffect, renderFileName, safeFileName, sanitizeSettings, type LoopMode,
@@ -165,5 +166,32 @@ describe('sizes and estimates', () => {
     expect(estimateGifBytes(480, 360, 120, 128, 'none')).toBeGreaterThan(base);
     expect(estimateGifBytes(480, 360, 60, 256, 'none')).toBeGreaterThan(base);
     expect(estimateGifBytes(480, 360, 60, 128, 'floyd')).toBeGreaterThan(base);
+  });
+});
+
+describe('dithering (palette mapping)', () => {
+  const gray = (w: number, h: number, v: number) => {
+    const a = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < w * h; i++) a.set([v, v, v, 255], i * 4);
+    return a;
+  };
+  const bw = [[0, 0, 0], [255, 255, 255]];
+  const mean = (idx: Uint8Array) => (idx.reduce((s, i) => s + bw[i][0], 0) / idx.length);
+  it('exact palette colors map to themselves in every mode', () => {
+    const pal = [[0, 0, 0], [255, 0, 0], [0, 255, 0], [0, 0, 255]];
+    const px = new Uint8ClampedArray(pal.flatMap((c) => [...c, 255]));
+    for (const m of ['none', 'floyd'] as const) expect([...ditherToIndex(px, 4, 1, pal, m)]).toEqual([0, 1, 2, 3]);
+  });
+  it('none: 50 % gray → all one color; Bayer and Floyd–Steinberg keep the average tone', () => {
+    const px = gray(32, 32, 128);
+    expect(new Set(ditherToIndex(px, 32, 32, bw, 'none')).size).toBe(1);
+    expect(mean(ditherToIndex(px, 32, 32, bw, 'floyd'))).toBeGreaterThan(110);
+    expect(mean(ditherToIndex(px, 32, 32, bw, 'floyd'))).toBeLessThan(146);
+    const b = ditherToIndex(px, 32, 32, bw, 'bayer');
+    expect(new Set(b).size).toBe(2);
+  });
+  it('Bayer is a fixed pattern: same input → same output, every time', () => {
+    const px = gray(16, 16, 90);
+    expect([...ditherToIndex(px, 16, 16, bw, 'bayer')]).toEqual([...ditherToIndex(px, 16, 16, bw, 'bayer')]);
   });
 });
