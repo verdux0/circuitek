@@ -246,7 +246,8 @@ svg { display: block; }
 
 /* ---------- main controls ---------- */
 .controls { display: flex; align-items: stretch; justify-content: center; gap: 14px; flex-wrap: wrap; padding-top: 2px; }
-.ctl-main { flex: none; display: flex; align-items: center; justify-content: center; gap: 14px; }
+/* EFFECT / FILTER: the two main knobs, compact, side by side in two columns. */
+.ctl-main { flex: none; display: grid; grid-template-columns: repeat(2, auto); align-items: center; justify-content: center; gap: 4px 14px; }
 
 /* ---------- mini CCD chip (rewire inline, src/ui/rewire.ts compact mode) ---------- */
 .mini-rewire { flex: 1 1 340px; min-width: 0; max-width: 480px; container-type: inline-size; }
@@ -508,8 +509,7 @@ svg { display: block; }
   .controls { gap: 8px; }
   .knob-lg { --k: 62px; }
   .mini-rewire { flex: 1 1 100%; max-width: none; }
-  .ctl-main { flex: 1 1 100%; justify-content: space-evenly; gap: 8px; }
-  .capture-btn { height: 56px; min-width: 84px; }
+  .ctl-main { flex: 1 1 100%; grid-template-columns: 1fr 1fr; justify-items: center; gap: 4px 8px; }
   .variant-grid { grid-template-columns: repeat(2, 1fr); }
   .pin-legend { grid-template-columns: 1fr; }
   .rw-row { grid-template-columns: 8px 1fr auto; }
@@ -561,6 +561,46 @@ svg { display: block; }
 .rack-tools .hw-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .rack-tools .hw-btn small { font: 800 11px var(--mono); letter-spacing: 0.06em; }
 .capture-btn .ico { width: 30px; height: 30px; }
+/* Capture lives in the top bar, right of the light / dark switch: same size as its neighbours. */
+.topbar .capture-btn { height: 40px; width: 46px; min-width: 0; font-size: 14px; padding: 0; }
+.topbar .capture-btn .ico { width: 22px; height: 22px; }
+
+/* ---------- media bar (video / GIF transport) ---------- */
+.media-bar {
+  display: flex; flex-direction: column; gap: 6px; margin-top: -6px;
+  border: 2px solid var(--edge); border-radius: 8px; padding: 6px 8px;
+  background: linear-gradient(var(--mod-hi), var(--mod-lo)); box-shadow: 0 3px 0 var(--edge), inset 0 1px 0 var(--hl-soft);
+}
+.media-bar[hidden] { display: none; }
+/* The transport bar takes ~90 px: the viewer gives them up so the knobs stay on screen. */
+.has-media .viewer { max-height: min(62vh, max(220px, calc(100vh - 455px))); }
+.mb-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mb-row2 { flex-wrap: wrap; row-gap: 6px; }
+.mb-play.pressed { background: linear-gradient(#ff7a4a, var(--accent-dk)); color: #fff; }
+.mb-play.pressed .ico { color: #fff; }
+.mb-seek { flex: 1; min-width: 60px; accent-color: var(--accent); height: 24px; margin: 0; cursor: pointer; }
+.mb-vol { width: 84px; accent-color: var(--accent); margin: 0; }
+.mb-seek:disabled, .mb-vol:disabled { opacity: 0.4; cursor: default; }
+.mb-time { font: 600 11.5px var(--mono); color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mb-kind { font: 800 10px var(--mono); letter-spacing: 0.1em; color: var(--ink-soft); white-space: nowrap; }
+#mb-speed {
+  height: 32px; border: 2px solid var(--edge); border-radius: 6px; padding: 0 6px; background: var(--panel-hi);
+  color: var(--ink); font: 700 12px var(--mono);
+}
+#mb-speed:focus-visible, .mb-seek:focus-visible, .mb-vol:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+#mb-loop.pressed, #mb-mute[aria-pressed='false'] { color: var(--accent-dk); }
+.mb-anim { align-items: center; gap: 6px; margin-left: auto; }
+.mb-anim input { width: 38px; height: 20px; }
+.mb-anim-label { font: 800 10px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.mb-note {
+  font: 800 9.5px var(--mono); letter-spacing: 0.08em; color: #fff; background: var(--accent-dk);
+  border-radius: 4px; padding: 3px 6px; white-space: nowrap;
+}
+@media (max-width: 560px) {
+  .mb-time { font-size: 10.5px; }
+  .mb-kind { display: none; }
+  .mb-vol { width: 64px; }
+}
 .view-hud button { display: inline-grid; place-items: center; }
 .view-hud .ico { width: 16px; height: 16px; color: #eee; }
 .viewer-cta { display: inline-flex; align-items: center; gap: 8px; }

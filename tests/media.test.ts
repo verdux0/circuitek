@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { GifWriter } from 'omggif';
+import { gifFrameCountAtLeast2 } from '../src/media/player';
 import { DEFAULT_FPS, MAX_SPEED, MIN_SPEED, SPEEDS, clampSpeed, estimateFps, formatTime, frameAt, frameSeed, spokenTime, timeOfFrame } from '../src/media/timing';
 
 describe('frameSeed (glitch animado)', () => {
@@ -78,5 +80,24 @@ describe('playback speed', () => {
     for (const s of SPEEDS) expect(clampSpeed(s)).toBe(s);
     expect(SPEEDS[0]).toBe(MIN_SPEED);
     expect(SPEEDS[SPEEDS.length - 1]).toBe(MAX_SPEED);
+  });
+});
+
+describe('animated GIF detection (gifFrameCountAtLeast2)', () => {
+  const makeGif = (frames: number, w = 8, h = 6): Uint8Array => {
+    const buf = new Uint8Array(4096);
+    const g = new GifWriter(buf as unknown as number[], w, h, { palette: [0x000000, 0xff0000, 0x00ff00, 0x0000ff], loop: 0 });
+    for (let i = 0; i < frames; i++) g.addFrame(0, 0, w, h, Array.from({ length: w * h }, (_, k) => (k + i) % 4), { delay: 5 });
+    return buf.subarray(0, g.end());
+  };
+  it('1 frame = still image, 2+ frames = animated', () => {
+    expect(gifFrameCountAtLeast2(makeGif(1))).toBe(false);
+    expect(gifFrameCountAtLeast2(makeGif(2))).toBe(true);
+    expect(gifFrameCountAtLeast2(makeGif(7))).toBe(true);
+  });
+  it('not a GIF / truncated → false, never throws', () => {
+    expect(gifFrameCountAtLeast2(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]))).toBe(false);
+    expect(gifFrameCountAtLeast2(makeGif(3).subarray(0, 40))).toBe(false);
+    expect(gifFrameCountAtLeast2(new Uint8Array(0))).toBe(false);
   });
 });

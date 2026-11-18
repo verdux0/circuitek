@@ -3,7 +3,7 @@ import './fonts';
 import { Engine, MAX_MEGAPIXELS, PREVIEW_MAX, PREVIEW_MAX_ZOOMED } from './engine';
 import { History } from './history';
 import { FACTORY_PRESETS, randomState, variantOf } from './presets';
-import { cloneState, defaultState, findPair, parsePresetFile, sanitizeState, toPresetFile, type GlitchState } from './model';
+import { cloneState, defaultState, encParams, findPair, parsePresetFile, sanitizeState, toPresetFile, type GlitchState } from './model';
 import { freshSeed } from './prng';
 import { Knob } from './ui/knob';
 import { CABLE_COLORS, RewirePanel } from './ui/rewire';
@@ -21,6 +21,8 @@ import { Viewport } from './ui/viewport';
 import { LayersPanel } from './ui/layers';
 import { hydrateIcons } from './ui/icons';
 import { initCollapsibles } from './ui/collapse';
+import { GifPlayer, VideoPlayer, mediaKind, type MediaPlayer } from './media/player';
+import { SPEEDS, formatTime, frameSeed, spokenTime } from './media/timing';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 hydrateIcons();
@@ -35,6 +37,8 @@ const LEGACY_STORE_KEY = 'glitch-editor:state:v1';
  */
 let doc: DocState = emptyDoc();
 const bitmaps = new Map<string, BitmapSource>();
+/** Video / GIF players by bitmap key (the bitmap under the same key is the poster frame). */
+const players = new Map<string, MediaPlayer>();
 /** Bytes of each bitmap for the session store: the original file, or a PNG encoded on demand. */
 const blobSources = new Map<string, Blob | (() => Promise<Blob>)>();
 const history = new History<DocState>();
@@ -162,6 +166,11 @@ const provider: SourceProvider = {
       const k = Math.min(2 ** Math.ceil(Math.log2(Math.max(pxScale, 1 / 16))), 4096 / Math.max(l.w, l.h));
       return { key: `${l.src}@${k}`, w: Math.max(1, Math.round(l.w * k)), h: Math.max(1, Math.round(l.h * k)), load: () => rasterTextAt(t, l.w, l.h, k) };
     }
+    if (l.media) {
+      // Live frame straight from the player (the poster bitmap below covers the reopen gap).
+      const pl = players.get(l.src);
+      if (pl) return { key: `${l.src}#m`, w: pl.w, h: pl.h, frame: pl.frame, stamp: pl.stamp, liveOnly: pl.playing, load: () => pl.source() };
+    }
     const bm = bitmaps.get(l.src);
     if (!bm) return null;
     const proxy = bm.proxy as ImageBitmap;
@@ -186,6 +195,9 @@ let previewMax = PREVIEW_MAX;
 
 let showOriginal = false;
 let frame = 0;
+/** Preview renders since load (the tests measure real fps with it). */
+let presents = 0;
+let mediaUiDirty = false;
 function requestRender(): void {
   if (frame) return;
   frame = requestAnimationFrame(() => {
@@ -199,6 +211,8 @@ function requestRender(): void {
     }
     engine.setDocSize(doc.w, doc.h, previewMax);
     engine.renderPreview(doc, null, ctx, showOriginal);
+    presents++;
+    if (mediaUiDirty) syncMediaBar();
   });
 }
 
@@ -213,13 +227,13 @@ function toast(msg: string): void {
 }
 
 const effectKnob = new Knob({
-  label: 'EFFECT', min: 0, max: 100, def: 50, value: cur().effect, size: 'lg',
+  label: 'EFFECT', min: 0, max: 100, def: 50, value: cur().effect, size: 'md',
   info: 'Intensidad global de todos los puentes.',
   onInput: (v) => edit((s) => { s.effect = v; }, 'live'),
   onChange: () => edit(() => {}, 'end'),
 });
 const filterKnob = new Knob({
-  label: 'FILTER', min: 0, max: 100, def: 50, value: cur().filter, size: 'lg',
+  label: 'FILTER', min: 0, max: 100, def: 50, value: cur().filter, size: 'md',
   info: 'Carácter del glitch: su efecto depende de cada par de pines (ver Recablear).',
   onInput: (v) => edit((s) => { s.filter = v; }, 'live'),
   onChange: () => edit(() => {}, 'end'),
@@ -450,6 +464,7 @@ $('btn-dice').addEventListener('click', () => edit((s) => { s.seed = freshSeed()
 /** Push state into every widget. `full` = also rebuild things that would break a drag. */
 function afterChange(full: boolean, docTouched = false): void {
   if (docTouched) {
+    syncPlayers();
     session.schedule();
     viewport.sync();
     layersPanel.sync();
@@ -491,23 +506,125 @@ function updatePair(): void {
 /* ------------------------------ import ------------------------------ */
 const PROXY_MAX = 1600;
 
-/** Imports one or more files; each one becomes a new layer. */
+/** Imports one or more files (images, animated GIFs, videos); each one becomes a new layer. */
 async function importFiles(files: (File | Blob)[]): Promise<void> {
-  const imgs = files.filter((f) => f.type.startsWith('image/'));
-  if (!imgs.length) return toast('Eso no es una imagen');
   let ok = 0;
-  for (const f of imgs) {
-    const name = f instanceof File ? f.name.replace(/\.[^.]+$/, '') : 'imagen pegada';
+  let known = 0;
+  let last = '';
+  for (const f of files) {
+    const kind = await mediaKind(f as File).catch(() => null);
+    if (!kind) continue;
+    known++;
+    const name = f instanceof File ? f.name.replace(/\.[^.]+$/, '') : kind === 'video' ? 'vídeo pegado' : 'imagen pegada';
     try {
-      const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' });
-      await addImageLayer(bmp, name, {}, f);
+      if (kind === 'image') {
+        const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' });
+        await addImageLayer(bmp, name, {}, f);
+      } else {
+        await addMediaLayer(f, kind, name);
+      }
+      last = kind;
       ok++;
-    } catch {
-      toast(`No se pudo leer «${name}» (¿formato no soportado?)`);
+    } catch (err) {
+      // Never fail silently: say which file and why (codec, size, damaged…).
+      const why = kind === 'image' ? '¿formato no soportado?' : (err as Error).message;
+      toast(`No se pudo abrir «${name}»: ${why}`);
+      await new Promise((r) => setTimeout(r, ok || known > 1 ? 2600 : 0));
     }
   }
-  if (ok) toast(ok === 1 ? `Capa añadida · lienzo ${doc.w}×${doc.h}` : `${ok} capas añadidas`);
+  if (!known) return toast('Eso no es una imagen, un GIF ni un vídeo');
+  if (ok === 1 && last !== 'image') toast(`${last === 'gif' ? 'GIF' : 'Vídeo'} añadido · Espacio = play/pausa`);
+  else if (ok === 1) toast(`Capa añadida · lienzo ${doc.w}×${doc.h}`);
+  else if (ok > 1) toast(`${ok} capas añadidas`);
 }
+
+/* ------------------------------ video / GIF layers ------------------------------ */
+/** Opens a player for a file and wires it to the render loop and the media bar. */
+async function openPlayer(blob: Blob, kind: 'video' | 'gif'): Promise<MediaPlayer> {
+  const p: MediaPlayer = kind === 'video' ? await VideoPlayer.open(blob, engine.maxSize) : await GifPlayer.open(blob, engine.maxSize);
+  p.onFrame = () => requestRender();
+  p.onState = () => markMediaUi();
+  return p;
+}
+/**
+ * "Glitch animado" default: on, as in a real CCD whose read noise differs every frame (a fixed
+ * pattern over moving footage looks like dirt on the screen). Off when the system asks for
+ * reduced motion: per-frame flicker is exactly what that setting is about.
+ */
+const defaultAnimate = (): boolean => !matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+async function addMediaLayer(f: Blob, kind: 'video' | 'gif', name: string): Promise<Layer> {
+  const player = await openPlayer(f, kind);
+  const key = newId('B');
+  players.set(key, player);
+  // The poster is a copy: the player closes its own bitmap when disposed.
+  const [w, h] = await registerBitmap(key, await createImageBitmap(player.poster), name);
+  blobSources.set(key, f);
+  const layer = insertLayer(key, w, h, name, { kind, animate: defaultAnimate() });
+  void player.play();
+  return layer;
+}
+
+/** Players follow the document: closed when no layer uses them, reopened (undo) from the stored file. */
+const opening = new Set<string>();
+function syncPlayers(): void {
+  const want = new Map<string, 'video' | 'gif'>();
+  for (const l of doc.layers) if (l.media) want.set(l.src, l.media.kind);
+  for (const [k, p] of players) {
+    if (want.has(k)) continue;
+    p.dispose();
+    players.delete(k);
+  }
+  for (const [k, kind] of want) if (!players.has(k) && !opening.has(k)) void reopenPlayer(k, kind);
+  markMediaUi();
+}
+async function reopenPlayer(k: string, kind: 'video' | 'gif'): Promise<void> {
+  const b = blobSources.get(k);
+  if (!(b instanceof Blob)) return;
+  opening.add(k);
+  try {
+    const p = await openPlayer(b, kind);
+    if (doc.layers.some((l) => l.src === k && l.media) && !players.has(k)) {
+      players.set(k, p);
+      requestRender();
+      markMediaUi();
+    } else p.dispose();
+  } catch (err) {
+    toast(`No se pudo reabrir el ${kind === 'gif' ? 'GIF' : 'vídeo'}: ${(err as Error).message}`);
+  } finally {
+    opening.delete(k);
+  }
+}
+/** The player the media bar drives: the selected layer's, else the first animated layer's. */
+function mediaTarget(): { layer: Layer; player: MediaPlayer } | null {
+  const pick = (l: Layer | undefined) => (l?.media && players.get(l.src) ? { layer: l, player: players.get(l.src)! } : null);
+  return pick(getLayer(doc, doc.active)) ?? pick(getLayer(doc, fxTargetId(doc))) ?? doc.layers.map(pick).find((x) => x) ?? null;
+}
+/** Frames each animated layer at its current frame as a still image (capture / projects). */
+async function freezeMedia(d: DocState): Promise<number> {
+  let n = 0;
+  for (const l of d.layers) {
+    if (!l.media) continue;
+    const p = players.get(l.src);
+    if (p) {
+      const bmp = await p.snapshot();
+      const key = newId('B');
+      await registerBitmap(key, bmp, l.name);
+      blobSources.set(key, () => bitmapToPng(bitmaps.get(key)!.full as ImageBitmap));
+      // Same pixels as on screen: the frame's noise seed becomes the still's seed.
+      if (l.fx && l.media.animate) l.fx = { ...l.fx, seed: frameSeed(l.fx.seed, p.frame, true) };
+      l.src = key;
+      n++;
+    }
+    delete l.media;
+  }
+  return n;
+}
+window.addEventListener('pagehide', (e) => {
+  if (e.persisted) return players.forEach((p) => p.pause());
+  players.forEach((p) => p.dispose());
+  players.clear();
+});
 
 /** Decodes / limits a bitmap and registers it (full + proxy) under `key`. */
 async function registerBitmap(key: string, bmp: ImageBitmap, name: string): Promise<[number, number]> {
@@ -530,12 +647,17 @@ async function addImageLayer(bmp: ImageBitmap, name: string, opts: { replace?: b
   const key = newId('B');
   const [w, h] = await registerBitmap(key, bmp, name);
   blobSources.set(key, file ?? (() => bitmapToPng(bitmaps.get(key)!.full as ImageBitmap)));
-  // The first image defines the canvas size.
-  const first = opts.replace || doc.layers.length === 0;
+  return insertLayer(key, w, h, name, undefined, opts.replace);
+}
+
+/** Adds a bitmap-backed layer above the active one (the first layer sets the canvas size). */
+function insertLayer(key: string, w: number, h: number, name: string, media?: Layer['media'], replace = false): Layer {
+  const first = replace || doc.layers.length === 0;
   let layer!: Layer;
   editDoc((d) => {
     if (first) Object.assign(d, emptyDoc(), { w, h, bg: d.bg });
     layer = { ...makeLayer(d, key, w, h, name), fx: newLayerFx() };
+    if (media) layer.media = media;
     const i = d.layers.findIndex((l) => l.id === d.active);
     d.layers.splice(i < 0 ? d.layers.length : i + 1, 0, layer);
     d.active = layer.id;
@@ -678,7 +800,7 @@ window.addEventListener('paste', (e) => {
   const dt = e.clipboardData;
   const text = dt?.getData('text/plain') ?? '';
   const fs = [...(dt?.items ?? [])]
-    .filter((i) => i.type.startsWith('image/'))
+    .filter((i) => i.kind === 'file' && (i.type.startsWith('image/') || i.type.startsWith('video/')))
     .map((i) => i.getAsFile())
     .filter((f): f is File => !!f);
   e.preventDefault();
@@ -714,8 +836,10 @@ function defaultProjectName(): string {
 async function saveProject(asNew: boolean): Promise<void> {
   if (!doc.layers.length) return toast('No hay nada que guardar: importa una imagen primero');
   if (!projects.available) return toast('Este navegador no permite guardar proyectos');
+  const json = JSON.stringify(doc);
   const snapshot = cloneDoc(doc);
-  const json = JSON.stringify(snapshot);
+  // Projects hold stills: each video / GIF layer is saved as its current frame, full resolution.
+  const frozen = await freezeMedia(snapshot);
   const now = Date.now();
   const existing = !asNew && project ? await projects.get(project.id) : null;
   const rec: ProjectRecord = {
@@ -742,7 +866,8 @@ async function saveProject(asNew: boolean): Promise<void> {
   $('viewer').classList.remove('flash');
   void $('viewer').offsetWidth;
   $('viewer').classList.add('flash');
-  toast(existing ? `Proyecto «${rec.name}» guardado` : `Guardado como proyecto «${rec.name}»`);
+  const what = frozen ? ` · fotograma ${formatTime(mediaTarget()?.player.time ?? 0)}` : '';
+  toast((existing ? `Proyecto «${rec.name}» guardado` : `Guardado como proyecto «${rec.name}»`) + what);
 }
 
 /** Loads the fonts a project needs from the projects database. */
@@ -798,7 +923,7 @@ function renderProjects(): void {
   $('projects').classList.toggle('empty', projectList.length === 0);
   $('project-count').textContent = projectList.length ? String(projectList.length) : '';
   if (!projectList.length) {
-    g.innerHTML = '<p class="projects-empty">Sin proyectos guardados. <b>Ctrl+S</b> guarda el documento; <b>Espacio</b> guarda una captura como proyecto nuevo.</p>';
+    g.innerHTML = '<p class="projects-empty">Sin proyectos guardados. <b>Ctrl+S</b> guarda el documento; <b>Capturar</b> (cámara, o Espacio sin vídeo) guarda una captura como proyecto nuevo.</p>';
     return;
   }
   g.innerHTML = projectList
@@ -1064,6 +1189,112 @@ ab.addEventListener('pointerdown', (e) => {
 ab.addEventListener('pointerup', () => setAB(false));
 ab.addEventListener('pointercancel', () => setAB(false));
 
+/* ------------------------------ media bar (video / GIF transport) ------------------------------ */
+const mb = {
+  bar: $('media-bar'),
+  play: $<HTMLButtonElement>('mb-play'),
+  prev: $<HTMLButtonElement>('mb-prev'),
+  next: $<HTMLButtonElement>('mb-next'),
+  seek: $<HTMLInputElement>('mb-seek'),
+  time: $('mb-time'),
+  speed: $<HTMLSelectElement>('mb-speed'),
+  loop: $<HTMLButtonElement>('mb-loop'),
+  mute: $<HTMLButtonElement>('mb-mute'),
+  vol: $<HTMLInputElement>('mb-vol'),
+  anim: $<HTMLInputElement>('mb-anim'),
+  note: $('mb-note'),
+  kind: $('mb-kind'),
+};
+mb.speed.innerHTML = SPEEDS.map((v) => `<option value="${v}">${String(v).replace('.', ',')}×</option>`).join('');
+let scrubbing = false;
+function markMediaUi(): void {
+  mediaUiDirty = true;
+  if (!frame) requestAnimationFrame(() => mediaUiDirty && syncMediaBar());
+}
+function toggleMedia(): void {
+  const t = mediaTarget();
+  if (!t) return;
+  if (t.player.playing) t.player.pause();
+  else void t.player.play();
+}
+/** Pushes the target player's state into the bar (cheap: runs once per rendered frame at most). */
+function syncMediaBar(): void {
+  mediaUiDirty = false;
+  const t = mediaTarget();
+  mb.bar.hidden = !t;
+  document.body.classList.toggle('has-media', !!t);
+  if (!t) return;
+  const { player: p, layer: l } = t;
+  const playing = p.playing;
+  mb.play.innerHTML = ico(playing ? 'pause' : 'play');
+  mb.play.setAttribute('aria-label', playing ? 'Pausa' : 'Reproducir');
+  mb.play.classList.toggle('pressed', playing);
+  mb.kind.textContent = p.kind === 'gif' ? `GIF · ${p.w}×${p.h}` : `VÍDEO · ${p.w}×${p.h}`;
+  const d = p.duration;
+  mb.seek.max = String(d || 0);
+  if (!scrubbing) mb.seek.value = String(p.time);
+  mb.seek.disabled = !d;
+  mb.seek.setAttribute('aria-valuetext', `${spokenTime(p.time)} de ${spokenTime(d)}`);
+  mb.time.textContent = `${formatTime(p.time)} / ${formatTime(d)}`;
+  const sp = String(p.speed);
+  if (mb.speed.value !== sp) mb.speed.value = sp;
+  mb.loop.setAttribute('aria-pressed', String(p.loop));
+  mb.loop.classList.toggle('pressed', p.loop);
+  const audio = p.kind === 'video' && p.hasAudio !== false;
+  mb.mute.disabled = !audio;
+  mb.vol.disabled = !audio;
+  mb.mute.title = audio ? 'Silenciar / activar sonido (M)' : p.kind === 'gif' ? 'Los GIF no tienen sonido' : 'Este vídeo no tiene audio';
+  mb.mute.innerHTML = ico(p.muted || !audio ? 'volume-x' : 'volume');
+  mb.mute.setAttribute('aria-label', p.muted ? 'Activar sonido' : 'Silenciar');
+  mb.mute.setAttribute('aria-pressed', String(p.muted));
+  mb.vol.value = String(p.muted ? 0 : Math.round(p.volume * 100));
+  mb.anim.checked = !!l.media?.animate;
+  // The encoder stage (JPEG / pixel sort) does not run while playing: say so.
+  const enc = !!l.fx && encParams(l.fx) !== null;
+  mb.note.hidden = !(enc && playing);
+}
+mb.play.addEventListener('click', toggleMedia);
+mb.prev.addEventListener('click', () => mediaTarget()?.player.step(-1));
+mb.next.addEventListener('click', () => mediaTarget()?.player.step(1));
+mb.seek.addEventListener('pointerdown', () => { scrubbing = true; });
+const endScrub = () => { scrubbing = false; markMediaUi(); };
+mb.seek.addEventListener('pointerup', endScrub);
+mb.seek.addEventListener('pointercancel', endScrub);
+mb.seek.addEventListener('change', endScrub);
+mb.seek.addEventListener('input', () => mediaTarget()?.player.seek(Number(mb.seek.value)));
+mb.speed.addEventListener('change', () => {
+  const t = mediaTarget();
+  if (t) t.player.speed = Number(mb.speed.value);
+  markMediaUi();
+});
+mb.loop.addEventListener('click', () => {
+  const t = mediaTarget();
+  if (t) t.player.loop = !t.player.loop;
+  markMediaUi();
+});
+mb.mute.addEventListener('click', () => {
+  const t = mediaTarget();
+  if (t) t.player.muted = !t.player.muted;
+  markMediaUi();
+});
+mb.vol.addEventListener('input', () => {
+  const t = mediaTarget();
+  if (!t) return;
+  const v = Number(mb.vol.value) / 100;
+  t.player.volume = v;
+  t.player.muted = v === 0;
+  markMediaUi();
+});
+mb.anim.addEventListener('change', () => {
+  const t = mediaTarget();
+  if (!t) return;
+  const on = mb.anim.checked;
+  editDoc((d) => {
+    for (const l of d.layers) if (l.src === t.layer.src && l.media) l.media.animate = on;
+  }, 'once');
+  toast(on ? 'Glitch animado: el ruido cambia en cada fotograma' : 'Glitch fijo: el mismo patrón en todos los fotogramas');
+});
+
 /* ------------------------------ misc buttons & keys ------------------------------ */
 const openRewire = (): void => {
   if (!fxLayer()) return toast('Importa una imagen para recablear sus efectos');
@@ -1262,7 +1493,15 @@ window.addEventListener('keydown', (e) => {
   }
   else if (e.key === ' ' && !t.matches('button')) {
     e.preventDefault();
-    void saveProject(true);
+    // With a video / GIF, Space is play / pause (as in every player); otherwise Capture.
+    if (mediaTarget()) toggleMedia();
+    else void saveProject(true);
+  } else if ((e.key === ',' || e.key === '.') && mediaTarget()) {
+    e.preventDefault();
+    mediaTarget()!.player.step(e.key === ',' ? -1 : 1);
+  } else if (k === 'm' && mediaTarget()) {
+    const p = mediaTarget()!.player;
+    if (p.kind === 'video') p.muted = !p.muted;
   }
 });
 function viewKey(k: string): void {
@@ -1409,6 +1648,27 @@ async function hydrate(d: DocState, blobFor: (key: string) => Promise<Blob | und
       out.push(l);
       continue;
     }
+    if (l.media && !players.has(l.src)) {
+      // Video / GIF: the stored file reopens through an object URL (never read whole).
+      const b = await blobFor(l.src);
+      if (!b) {
+        missing++;
+        continue;
+      }
+      try {
+        const p = await openPlayer(b, l.media.kind);
+        players.set(l.src, p);
+        if (!bitmaps.has(l.src)) await registerBitmap(l.src, await createImageBitmap(p.poster), l.name);
+        blobSources.set(l.src, b);
+        void p.play();
+      } catch (err) {
+        toast(`No se pudo reabrir «${l.name}»: ${(err as Error).message}`);
+        missing++;
+        continue;
+      }
+      out.push(l);
+      continue;
+    }
     if (!bitmaps.has(l.src)) {
       const b = await blobFor(l.src);
       if (!b) {
@@ -1524,6 +1784,37 @@ async function hashPixels(img: ImageData): Promise<string> {
 }
 Object.assign(window, {
   __glitch: {
+    /** Transport state of the media bar's player (null without video / GIF). */
+    media: () => {
+      const t = mediaTarget();
+      if (!t) return null;
+      const p = t.player;
+      return {
+        kind: p.kind, decoder: p instanceof GifPlayer ? p.decoder : 'video', w: p.w, h: p.h, duration: p.duration, time: p.time,
+        frame: p.frame, fps: p.fps, stamp: p.stamp, playing: p.playing, speed: p.speed, loop: p.loop, volume: p.volume,
+        muted: p.muted, hasAudio: p.hasAudio, animate: !!t.layer.media?.animate,
+      };
+    },
+    /** Preview renders since load (fps = delta / seconds). */
+    presents: () => presents,
+    /** Renders one "new frame" now (texture re-upload + every pass) and waits for the GPU: per-frame cost. */
+    renderOnce: () => {
+      const t = mediaTarget();
+      if (t) (t.player as { stamp: number }).stamp++;
+      engine.renderPreview(doc, null, ctx, false);
+      const gl = engine.gl.gl;
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    },
+    players: () => players.size,
+    /** Size of the still the newest project holds for its first layer (capture = full resolution). */
+    newestProjectStill: async () => {
+      const all = await projects.list();
+      const newest = all.sort((a, b) => b.updated - a.updated)[0];
+      const rec = newest ? await projects.get(newest.id) : null;
+      const l = rec?.doc.layers.find((x) => !x.text);
+      const bm = l ? (bitmaps.get(l.src)?.full as ImageBitmap | undefined) : undefined;
+      return l ? { w: bm?.width ?? 0, h: bm?.height ?? 0, media: !!l.media, layerW: l.w, layerH: l.h } : null;
+    },
     loadSample: async () => {
       await addImageLayer(await makeSampleImage(), 'Carta de ajuste', { replace: true });
     },

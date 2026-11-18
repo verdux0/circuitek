@@ -30,10 +30,11 @@
           <h1 class="logo"><span class="logo-word" data-t="GL1TCH">GL1TCH</span><span class="logo-sub">editor<br />circuit&nbsp;bent</span></h1>
           <div class="topbar-actions">
             <button class="hw-btn icon" id="btn-new" aria-label="Documento nuevo" title="Documento nuevo (la sesión actual se puede recuperar con Ctrl+Z)"><i data-ico="new"></i></button>
-            <button class="hw-btn icon" id="btn-import" aria-label="Añadir imágenes" title="Añadir imágenes como capas (I)"><i data-ico-add="image"></i></button>
+            <button class="hw-btn icon" id="btn-import" aria-label="Añadir imágenes, GIF o vídeos" title="Añadir imágenes, GIF o vídeos como capas (I)"><i data-ico-add="image"></i></button>
             <button class="hw-btn icon" id="btn-undo" aria-label="Deshacer" title="Deshacer (Ctrl+Z)"><i data-ico="undo"></i></button>
             <button class="hw-btn icon" id="btn-redo" aria-label="Rehacer" title="Rehacer (Ctrl+Shift+Z)"><i data-ico="redo"></i></button>
             <button class="hw-btn icon" id="btn-theme" aria-label="Cambiar a modo oscuro" title="Modo claro / oscuro"><span class="theme-dark"><i data-ico="moon"></i></span><span class="theme-light"><i data-ico="sun"></i></span></button>
+            <button class="hw-btn icon capture-btn" id="btn-capture" aria-label="Capturar como proyecto nuevo" title="Capturar: guarda el estado actual como proyecto nuevo, con el fotograma actual si hay vídeo (Espacio; con vídeo, Ctrl+Shift+S)"><i data-ico="camera"></i></button>
           </div>
         </header>
 
@@ -47,13 +48,36 @@
             <button data-z="fit" aria-label="Encajar en pantalla" title="Encajar en pantalla (0)"><i data-ico="fit"></i></button>
           </div>
           <div class="viewer-empty" id="empty">
-            <button class="viewer-cta" id="btn-empty"><i data-ico-add="image"></i> Suelta una o varias fotos, o pulsa para importar</button>
+            <button class="viewer-cta" id="btn-empty"><i data-ico-add="image"></i> Suelta fotos, GIF o vídeos, o pulsa para importar</button>
             <p>Tus fotos no salen de tu equipo. Todo se procesa en el navegador; no se sube nada. La sesión se guarda sola en este navegador.</p>
             <button class="viewer-link" id="btn-sample">o prueba con la carta de ajuste</button>
           </div>
           <div class="viewer-badge" id="badge" hidden>ORIGINAL</div>
           <span class="led viewer-busy" id="busy" title="Procesando" aria-hidden="true"></span>
           <div class="drop-hint">Suelta para importar</div>
+        </div>
+
+        <div class="media-bar" id="media-bar" role="group" aria-label="Controles de vídeo / GIF" hidden>
+          <div class="mb-row">
+            <button class="hw-btn icon-sm" id="mb-prev" aria-label="Fotograma anterior" title="Fotograma anterior (,)"><i data-ico="step-back"></i></button>
+            <button class="hw-btn icon-sm mb-play" id="mb-play" aria-label="Reproducir" title="Reproducir / pausa (Espacio)"><i data-ico="play"></i></button>
+            <button class="hw-btn icon-sm" id="mb-next" aria-label="Fotograma siguiente" title="Fotograma siguiente (.)"><i data-ico="step-forward"></i></button>
+            <input class="mb-seek" id="mb-seek" type="range" min="0" max="0" step="any" value="0" aria-label="Posición" />
+            <span class="mb-time" id="mb-time" aria-hidden="true">0:00.0 / 0:00.0</span>
+          </div>
+          <div class="mb-row mb-row2">
+            <span class="mb-kind" id="mb-kind">VÍDEO</span>
+            <select id="mb-speed" aria-label="Velocidad de reproducción" title="Velocidad"></select>
+            <button class="hw-btn icon-sm" id="mb-loop" aria-label="Bucle" aria-pressed="true" title="Bucle"><i data-ico="repeat"></i></button>
+            <button class="hw-btn icon-sm" id="mb-mute" aria-label="Silenciar" aria-pressed="true" title="Silenciar / activar sonido (M)"><i data-ico="volume-x"></i></button>
+            <input class="mb-vol" id="mb-vol" type="range" min="0" max="100" step="1" value="0" aria-label="Volumen" />
+            <label class="switch mb-anim" title="Activo: el ruido del glitch cambia en cada fotograma. Inactivo: patrón fijo.">
+              <input type="checkbox" id="mb-anim" />
+              <span class="switch-track"><span class="switch-thumb"></span></span>
+              <span class="mb-anim-label">Glitch animado</span>
+            </label>
+            <span class="mb-note" id="mb-note" role="status" hidden title="JPEG y pixel sort son demasiado lentos para cada fotograma: se aplican al pausar, al capturar y al exportar">JPEG/SORT: SOLO EN PAUSA</span>
+          </div>
         </div>
 
         <div class="fx-target" id="fx-target">
@@ -67,7 +91,6 @@
           <div class="ctl-main">
             <div class="ctl-knob" id="knob-effect"></div>
             <div class="ctl-knob" id="knob-filter"></div>
-            <button class="hw-btn capture-btn" id="btn-capture" aria-label="Capturar como proyecto nuevo" title="Capturar: guarda el estado actual como proyecto nuevo (Espacio)"><i data-ico="camera"></i></button>
           </div>
         </nav>
 
@@ -137,7 +160,8 @@
               <b>Visor</b> · rueda zoom · Ctrl+rueda ↕ · Alt/Shift+rueda ↔ · Ctrl/Alt/botón central + arrastrar = mano · 2 dedos = pellizco · + − 0 1 zoom · clic derecho = menú de la capa (girar, espejo, copiar…).<br />
               <b>Capas</b> · arrastrar mover · asas escalar (Shift libre, Alt desde el centro) · asa superior girar (Shift = pasos de 15°) · flechas mover (Shift ×10) · [ ] girar 90° · H / Shift+H espejo · Ctrl+C / Ctrl+X / Ctrl+V copiar, cortar, pegar · Ctrl+J duplicar · F2 o doble clic renombrar · Supr borrar · T capa de texto.<br />
               <b>Efectos</b> (capa seleccionada o, sin selección, la imagen principal) · W vista ampliada del recableado (el mini chip bajo el visor se edita directamente) · R aleatorio · V variantes · B (mantener) original · Ctrl+Z / Ctrl+Shift+Z · Knobs: arrastra ↕, rueda, Shift fino, doble clic reset.<br />
-              <b>Proyectos</b> · Ctrl+S guardar · Ctrl+Shift+S o Espacio guardar como nuevo · doble clic en el nombre para renombrar.
+              <b>Proyectos</b> · Ctrl+S guardar · Ctrl+Shift+S, o Espacio sin vídeo, guardar como nuevo (Capturar) · doble clic en el nombre para renombrar.<br />
+              <b>Vídeo / GIF</b> · Espacio play/pausa · , / . fotograma anterior / siguiente · M silencio · Capturar guarda el fotograma actual a resolución completa.
             </p>
           </details>
         </div>
@@ -146,7 +170,7 @@
 
     <button class="hw-btn rack-toggle" id="btn-rack" aria-controls="rack" aria-expanded="false" aria-label="Abrir panel"><span class="when-closed"><i data-ico="layers"></i></span><span class="when-open"><i data-ico="close"></i></span></button>
 
-    <input type="file" id="file" accept="image/*" multiple hidden />
+    <input type="file" id="file" accept="image/*,video/*,.gif,.mp4,.m4v,.webm,.mov,.mkv" multiple hidden />
     <input type="file" id="preset-file" accept=".json,application/json" hidden />
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <div class="overlay" id="progress" hidden>
