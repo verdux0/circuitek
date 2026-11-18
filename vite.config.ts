@@ -8,6 +8,9 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 //                           so secure-context APIs work when opened from a phone by IP.
 export default defineConfig(({ mode }) => ({
   base: './',
+  // The font library (public/fonts, ~28 MB) is served next to dist/; the single-file build keeps
+  // only the 7 base fonts bundled in fonts.ts, so it does not copy public/ at all.
+  publicDir: mode === 'single' ? false : 'public',
   plugins: [
     ...(mode === 'single' ? [viteSingleFile()] : []),
     ...(mode === 'phone' ? [basicSsl({ name: 'glitch-editor-dev' })] : []),
@@ -17,5 +20,5 @@ export default defineConfig(({ mode }) => ({
     target: 'es2022',
   },
   worker: { format: 'iife' },
-  test: { environment: 'node', include: ['tests/**/*.test.ts'] },
+  test: { environment: 'node', include: ['tests/**/*.test.ts', 'tests/**/*.test.mjs'] },
 }));

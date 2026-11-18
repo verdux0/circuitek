@@ -1,0 +1,82 @@
+[
+ {
+  "id": "display",
+  "label": "Display",
+  "count": 187
+ },
+ {
+  "id": "script",
+  "label": "Script",
+  "count": 34
+ },
+ {
+  "id": "manuscrita",
+  "label": "Manuscrita",
+  "count": 110
+ },
+ {
+  "id": "gotica",
+  "label": "Gótica",
+  "count": 10
+ },
+ {
+  "id": "retro",
+  "label": "Retro",
+  "count": 24
+ },
+ {
+  "id": "stencil",
+  "label": "Stencil",
+  "count": 7
+ },
+ {
+  "id": "pixel",
+  "label": "Pixel",
+  "count": 12
+ },
+ {
+  "id": "graffiti",
+  "label": "Graffiti",
+  "count": 7
+ },
+ {
+  "id": "comic",
+  "label": "Cómic",
+  "count": 9
+ },
+ {
+  "id": "decorativa",
+  "label": "Decorativa",
+  "count": 1
+ },
+ {
+  "id": "experimental",
+  "label": "Experimental",
+  "count": 23
+ },
+ {
+  "id": "maquina",
+  "label": "Máquina de escribir",
+  "count": 3
+ },
+ {
+  "id": "sans",
+  "label": "Sans serif",
+  "count": 90
+ },
+ {
+  "id": "serif",
+  "label": "Serif",
+  "count": 24
+ },
+ {
+  "id": "slab",
+  "label": "Slab serif",
+  "count": 3
+ },
+ {
+  "id": "mono",
+  "label": "Monoespaciada",
+  "count": 25
+ }
+]

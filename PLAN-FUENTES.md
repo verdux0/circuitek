@@ -88,3 +88,22 @@ Fjalla One, Pacifico, Orbitron, Lobster…
    `photopea.matched = false`.
 6. **`build:single`** se queda con las 7 fuentes base actuales; la biblioteca solo va en `dist` (se sirve aparte).
 7. Las `fs/` de Photopea **quedan fuera** salvo que quieras que verifique a mano una lista corta concreta.
+
+## Decisión 1 (respuesta del usuario)
+Opción **C** (400 familias); sí a completar categorías con fuentes abiertas fuera de Photopea; sí a variable o hasta
+4 estilos; sí a `build:single` con solo las 7 base. Punto 5 («la licencia está bien, añádelas»): **pendiente de un
+origen**. Las 716 `fs/` solo existen como archivos de Photopea (prohibido descargarlas de ahí) y no hay texto de
+licencia por familia; se añadirán las que lleguen con su página de origen o en `tools/fonts/manual/<familia>/`.
+
+## Fase 2 — biblioteca (hecha)
+- `tools/fonts/build-catalog.mjs`: selección (7 base + complemento + estilizadas por popularidad, básicas y mono),
+  plan de variantes dentro de 300 KB por archivo y descarga de los WOFF2 `latin`/`latin-ext`, el `LICENSE` y el
+  `metadata.json` (autor, URL) de cada paquete de Fontsource en npm (espejo de jsDelivr). Sin 300 devDependencies.
+- `tools/fonts/categories.mjs`: 18 categorías propias (Photopea + Fontsource + palabras clave).
+- `tools/fonts/validate-fonts.mjs`: esquema, ids únicos, archivos con tamaño y firma WOFF2, ≤ 300 KB, total ≤ 60 MB,
+  licencia permitida con texto y fila en `THIRD-PARTY.md`.
+- `subset-fonts.mjs` **no hace falta**: Fontsource ya publica los subconjuntos WOFF2 sin perder tablas OpenType.
+- Resultado: **399 familias** (1 excluida: *Libertinus Math*, ninguna variante cabe en 300 KB), **1034 WOFF2,
+  27,7 MB** (34 MB con licencias y catálogo), `fonts.json` 384 KB. `dist` 37 MB; `dist-single` 2,3 MB (sin biblioteca).
+- Categorías: Display 187, Manuscrita 110, Sans 90, Script 34, Mono 25, Retro 24, Serif 24, Experimental 23,
+  Pixel 12, Gótica 10, Cómic 9, Stencil 7, Graffiti 7, Máquina de escribir 3, Slab 3, Decorativa 1.
