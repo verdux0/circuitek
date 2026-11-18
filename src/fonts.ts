@@ -3,6 +3,15 @@
  * .woff2 files next to the build (or inlines them in the single-file build), so text
  * layers never touch the network.
  */
+// Interface fonts (before: Google Fonts at runtime; now bundled, so the app makes no external request).
+import '@fontsource/nunito/latin-500.css';
+import '@fontsource/nunito/latin-600.css';
+import '@fontsource/nunito/latin-700.css';
+import '@fontsource/nunito/latin-800.css';
+import '@fontsource/nunito/latin-900.css';
+import '@fontsource/jetbrains-mono/latin-600.css';
+import '@fontsource/jetbrains-mono/latin-700.css';
+import '@fontsource/jetbrains-mono/latin-800.css';
 import '@fontsource/anton/latin-400.css';
 import '@fontsource/bebas-neue/latin-400.css';
 import '@fontsource/vt323/latin-400.css';
