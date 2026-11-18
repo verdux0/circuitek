@@ -6,7 +6,7 @@ End-to-end verification in a real (headless) Chrome.
 
 Produces contact sheets + UI screenshots in docs/screenshots and prints a pass/fail report.
 """
-import asyncio, base64, io, json, sys
+import asyncio, base64, io, json, os, shutil, sys, tempfile
 from pathlib import Path
 from playwright.async_api import async_playwright
 from PIL import Image, ImageDraw, ImageFont
@@ -14,7 +14,16 @@ from PIL import Image, ImageDraw, ImageFont
 URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:4173/"
 OUT = Path(sys.argv[2] if len(sys.argv) > 2 else "docs/screenshots")
 OUT.mkdir(parents=True, exist_ok=True)
-FONT = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 15)
+
+def _first(paths):
+    return next((p for p in paths if p and Path(p).exists()), None)
+
+# Linux and Windows; override with GLITCH_CHROME=/path/to/chrome.
+CHROME = _first([os.environ.get("GLITCH_CHROME"), "/usr/bin/google-chrome", shutil.which("google-chrome"),
+                 r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                 r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"])
+_font = _first(["/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", r"C:\Windows\Fonts\consola.ttf"])
+FONT = ImageFont.truetype(_font, 15) if _font else ImageFont.load_default()
 CHROME_ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"]
 
 PINS = ["SUB", "RG", "OD", "TG", "AB", "HCLK"]
@@ -41,8 +50,19 @@ async def render(pg, state):
             break
         await pg.wait_for_timeout(50)
     await pg.wait_for_timeout(60)
-    url = await pg.evaluate("document.getElementById('screen').toDataURL('image/png')")
+    url = await stable_frame(pg)
     return Image.open(io.BytesIO(base64.b64decode(url.split(",")[1]))).convert("RGB")
+
+async def stable_frame(pg, tries=20):
+    """The screen canvas once two grabs 150 ms apart match (the encoder worker can land late)."""
+    prev = await pg.evaluate("document.getElementById('screen').toDataURL('image/png')")
+    for _ in range(tries):
+        await pg.wait_for_timeout(150)
+        cur = await pg.evaluate("document.getElementById('screen').toDataURL('image/png')")
+        if cur == prev:
+            return cur
+        prev = cur
+    return prev
 
 def sheet(items, cols, cell_w, path, title):
     tiles = []
@@ -70,9 +90,104 @@ def diff(a, b):
     pa, pb = a.tobytes(), b.tobytes()
     return sum(abs(x - y) for x, y in zip(pa, pb)) / len(pa)
 
+async def canvas(pg):
+    """The screen canvas as it is now (after the UI changed the state), as a PIL image."""
+    await pg.wait_for_timeout(150)
+    for _ in range(100):
+        if not await pg.evaluate("document.getElementById('busy').classList.contains('on')"):
+            break
+        await pg.wait_for_timeout(50)
+    await pg.wait_for_timeout(60)
+    url = await stable_frame(pg)
+    return Image.open(io.BytesIO(base64.b64decode(url.split(",")[1]))).convert("RGB")
+
+async def drag_pins(pg, scope, a, b):
+    """Drag a cable from pin a to pin b inside `scope` (.rw-mini = mini chip, .sheet = full view)."""
+    pa = await pg.locator(f'{scope} [data-pin="{a}"] .pin-pad').bounding_box()
+    pb = await pg.locator(f'{scope} [data-pin="{b}"] .pin-pad').bounding_box()
+    await pg.mouse.move(pa["x"] + pa["width"] / 2, pa["y"] + pa["height"] / 2)
+    await pg.mouse.down()
+    await pg.mouse.move((pa["x"] + pb["x"]) / 2, (pa["y"] + pb["y"]) / 2 + 20, steps=6)
+    await pg.mouse.move(pb["x"] + pb["width"] / 2, pb["y"] + pb["height"] / 2, steps=4)
+    await pg.mouse.up()
+    await pg.wait_for_timeout(150)
+
+async def cables(pg):
+    return await pg.evaluate("window.__glitch.getState().cables")
+
+async def mini_checks(pg):
+    """Mini chip in the controls bar: same state as the full sheet, edited in place."""
+    await pg.evaluate("window.__glitch.loadSample()")
+    await pg.evaluate("s => window.__glitch.setState(s)", base_state())
+    clean = await canvas(pg)
+    check("mini chip visible bajo el visor", await pg.locator(".controls .rw-mini .pcb-svg").is_visible())
+    await drag_pins(pg, ".rw-mini", "RG", "TG")
+    c = await cables(pg)
+    check("mini chip: arrastrar de pin a pin crea un cable", [(x["a"], x["b"]) for x in c] == [("RG", "TG")], json.dumps(c))
+    wired = await canvas(pg)
+    check("mini chip: el cable cambia la imagen al momento", diff(clean, wired) > 8, f"{diff(clean, wired):.1f}")
+    await pg.screenshot(path=str(OUT / "13-mini-chip-cable.png"))
+    # resistance slider (live) + one undo step
+    await pg.locator('.rw-mini input[data-amount="0"]').fill("35")
+    amt = (await cables(pg))[0]["amount"]
+    low = await canvas(pg)
+    check("mini chip: el slider de resistencia cambia amount", amt == 35, str(amt))
+    check("mini chip: el slider cambia la imagen", diff(low, wired) > 1, f"{diff(low, wired):.1f}")
+    await pg.locator(".rw-mini .rw-side-title").click()
+    await pg.keyboard.press("Control+z"); await pg.wait_for_timeout(100)
+    check("Ctrl+Z deshace el slider del mini chip", (await cables(pg))[0]["amount"] == 100, json.dumps(await cables(pg)))
+    await pg.keyboard.press("Control+Shift+z"); await pg.wait_for_timeout(100)
+    # the full view shows the same cable and the same resistance
+    await pg.keyboard.press("w"); await pg.wait_for_timeout(250)
+    check("W abre la vista ampliada", await pg.locator(".sheet .pcb-svg").is_visible())
+    n_sheet = await pg.locator(".sheet .cables .cable").count()
+    knob = await pg.locator(".sheet .rw-knob .knob-dial").first.get_attribute("aria-valuenow")
+    check("vista ampliada: mismo cable que el mini chip", n_sheet == 1, f"{n_sheet} cable(s)")
+    check("vista ampliada: misma resistencia que el slider", knob == "35", f"knob = {knob}")
+    await pg.screenshot(path=str(OUT / "14-vista-ampliada-mismo-cable.png"))
+    # a cable added in the full view appears in the mini chip at once (visible under the sheet)
+    await drag_pins(pg, ".sheet", "SUB", "OD")
+    n_mini = await pg.locator(".rw-mini .cables .cable").count()
+    check("cable hecho en la vista ampliada aparece en el mini chip", n_mini == 2, f"{n_mini}")
+    await pg.keyboard.press("Escape"); await pg.wait_for_timeout(150)
+    # keyboard on the mini chip: Space on two pins bridges them and does NOT trigger Space = capture
+    projs = await pg.evaluate("document.querySelectorAll('#project-grid > *').length")
+    await pg.locator('.rw-mini [data-pin="AB"]').focus(); await pg.keyboard.press(" ")
+    await pg.locator('.rw-mini [data-pin="HCLK"]').focus(); await pg.keyboard.press(" ")
+    await pg.wait_for_timeout(300)
+    c = await cables(pg)
+    projs2 = await pg.evaluate("document.querySelectorAll('#project-grid > *').length")
+    check("mini chip con teclado: Espacio en dos pines crea el cable", len(c) == 3 and (c[2]["a"], c[2]["b"]) == ("AB", "HCLK"), json.dumps(c))
+    check("Espacio en un pin no dispara Capturar", projs == projs2, f"{projs} -> {projs2} proyectos")
+    labels = await pg.evaluate("Array.from(document.querySelectorAll('.rw-mini [data-pin]')).every(g => g.getAttribute('aria-label') && g.tabIndex === 0)")
+    check("pines del mini chip con aria-label y foco de teclado", labels)
+    # max 3 cables still enforced from the mini chip
+    await drag_pins(pg, ".rw-mini", "SUB", "RG")
+    check("mini chip respeta el máximo de 3 cables", len(await cables(pg)) == 3)
+    # remove from the mini chip: x button and tap on the cable
+    await pg.locator('.rw-mini [data-remove="2"]').click(); await pg.wait_for_timeout(100)
+    check("mini chip: el botón x quita el cable", len(await cables(pg)) == 2)
+    # the RG+TG wire crosses the chip: click the middle of its bounding box (away from the pins)
+    box = await pg.locator('.rw-mini .cable[data-cable="0"] .cable-wire').bounding_box()
+    await pg.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2); await pg.wait_for_timeout(100)
+    c = await cables(pg)
+    check("mini chip: tocar un cable lo quita", len(c) == 1 and (c[0]["a"], c[0]["b"]) == ("SUB", "OD"), json.dumps(c))
+
+async def layout_checks(pg, label):
+    vw = await pg.evaluate("innerWidth")
+    sw = await pg.evaluate("document.documentElement.scrollWidth")
+    check(f"{label}: sin scroll horizontal", sw <= vw, f"scrollWidth {sw} / {vw}")
+    over = await pg.evaluate("""() => Array.from(document.querySelectorAll('.controls, .controls *')).filter(e => {
+        const r = e.getBoundingClientRect(); return r.width && (r.left < -1 || r.right > innerWidth + 1); }).map(e => String(e.className.baseVal ?? e.className)).slice(0, 5)""")
+    check(f"{label}: controles dentro del ancho", not over, ", ".join(over))
+    spill = await pg.evaluate("""() => { const card = document.querySelector('.rw-mini').getBoundingClientRect();
+        return Array.from(document.querySelectorAll('.rw-mini .rw-side *')).filter(e => { const r = e.getBoundingClientRect();
+          return r.width && (r.right > card.right + 1 || r.left < card.left - 1); }).map(e => String(e.className.baseVal ?? e.className)).slice(0, 5); }""")
+    check(f"{label}: nada se sale de la tarjeta del mini chip", not spill, ", ".join(spill))
+
 async def main():
     async with async_playwright() as p:
-        browser = await p.chromium.launch(executable_path="/usr/bin/google-chrome", args=CHROME_ARGS)
+        browser = await p.chromium.launch(executable_path=CHROME, args=CHROME_ARGS)
         ctx = await browser.new_context(viewport={"width": 1400, "height": 1000}, accept_downloads=True)
         pg = await ctx.new_page()
         console_errors, requests = [], []
@@ -88,6 +203,7 @@ async def main():
 
         await pg.evaluate("window.__glitch.loadSample()")
         await pg.wait_for_timeout(400)
+        await pg.click("#tab-fx")  # seed / presets live in the Efectos tab
         original = await render(pg, base_state())
 
         # ---- 15 pairs contact sheet ----
@@ -188,15 +304,16 @@ async def main():
         path.unlink()
 
         # ---- import a real file via the file input (jpg / png / webp) ----
-        tmp = Path("/tmp/ge-import"); tmp.mkdir(exist_ok=True)
+        tmp = Path(tempfile.gettempdir()) / "ge-import"; tmp.mkdir(exist_ok=True)
         src = Image.open(OUT / "02-hoja-15-pares.png").convert("RGB").crop((0, 0, 900, 600))
         for fmt in ["JPEG", "PNG", "WEBP"]:
             f = tmp / f"in.{fmt.lower()}"
             src.save(f, fmt)
             await pg.set_input_files("#file", str(f))
             await pg.wait_for_timeout(500)
-            dims = await pg.evaluate("window.__glitch.exportSize().then(r => r.original)")
-            check(f"importa {fmt}", dims == [900, 600], str(dims))
+            # Each import becomes a new layer at the file's own resolution (the canvas keeps its size).
+            dims = await pg.evaluate("(() => { const l = window.__glitch.getDoc().layers.at(-1); return [l.w, l.h, l.name]; })()")
+            check(f"importa {fmt}", dims[:2] == [900, 600] and dims[2] == "in", str(dims))
 
         # ---- UI screenshots ----
         await pg.evaluate("window.__glitch.loadSample()")
@@ -208,12 +325,25 @@ async def main():
         await pg.select_option("#preset-select", "3"); await pg.wait_for_timeout(600)
         await pg.click("#btn-capture"); await pg.wait_for_timeout(600)
         await pg.screenshot(path=str(OUT / "06-escritorio.png"))
+        await layout_checks(pg, "escritorio 1400px")
+        bottom = await pg.evaluate("document.querySelector('.controls').getBoundingClientRect().bottom")
+        check("escritorio 1400x1000: visor + mini chip + knobs caben sin scroll", bottom <= 1000, f"bottom {bottom:.0f}")
+        lap = await ctx.new_page()
+        await lap.set_viewport_size({"width": 1280, "height": 800})
+        await lap.goto(URL); await lap.wait_for_load_state("networkidle")
+        await lap.evaluate("window.__glitch.loadSample()")
+        await lap.evaluate("s => window.__glitch.setState(s)", multi); await lap.wait_for_timeout(300)
+        bottom = await lap.evaluate("document.querySelector('.controls').getBoundingClientRect().bottom")
+        check("portátil 1280x800: visor + mini chip + knobs caben sin scroll", bottom <= 800, f"bottom {bottom:.0f}")
+        await layout_checks(lap, "portátil 1280px")
+        await lap.screenshot(path=str(OUT / "06b-portatil.png"))
+        await lap.close()
         await pg.click("#btn-rewire"); await pg.wait_for_timeout(300)
         await pg.screenshot(path=str(OUT / "07-rewire.png"))
         # drag a new cable SUB -> HCLK... first free a slot by closing and checking cable count
         n_before = await pg.evaluate("window.__glitch.getState().cables.length")
-        sub = await pg.locator('[data-pin="SUB"] .pin-pad').bounding_box()
-        ab = await pg.locator('[data-pin="AB"] .pin-pad').bounding_box()
+        sub = await pg.locator('.sheet [data-pin="SUB"] .pin-pad').bounding_box()
+        ab = await pg.locator('.sheet [data-pin="AB"] .pin-pad').bounding_box()
         await pg.mouse.move(sub["x"] + sub["width"] / 2, sub["y"] + sub["height"] / 2)
         await pg.mouse.down()
         await pg.mouse.move(ab["x"] + 5, ab["y"] + 30, steps=8)
@@ -237,6 +367,7 @@ async def main():
         await pg.keyboard.press("Control+Shift+z"); await pg.wait_for_timeout(100)
         redone = await pg.evaluate("window.__glitch.getState().effect")
         check("Ctrl+Shift+Z rehace", redone == after, f"{redone}")
+        await mini_checks(pg)
         await pg.click("#btn-variants"); await pg.wait_for_timeout(2500)
         await pg.screenshot(path=str(OUT / "09-variantes.png"))
         await pg.keyboard.press("Escape")
@@ -249,6 +380,20 @@ async def main():
         await mob.evaluate("s => window.__glitch.setState(s)", multi)
         await mob.wait_for_timeout(400)
         await mob.screenshot(path=str(OUT / "10-movil.png"))
+        await layout_checks(mob, "móvil 390px")
+        await mob.evaluate("s => window.__glitch.setState(s)", base_state())
+        before = await canvas(mob)
+        await drag_pins(mob, ".rw-mini", "OD", "HCLK")
+        c = await cables(mob)
+        check("móvil: arrastrar en el mini chip crea un cable", len(c) == 1, json.dumps(c))
+        check("móvil: la imagen cambia con el cable", diff(before, await canvas(mob)) > 8)
+        await mob.evaluate("window.scrollTo(0, 0)"); await mob.wait_for_timeout(200)
+        await mob.screenshot(path=str(OUT / "15-movil-mini-chip.png"))
+        vis = await mob.evaluate("""() => { const v = document.getElementById('viewer').getBoundingClientRect(), c = document.querySelector('.rw-mini').getBoundingClientRect();
+            return v.top >= 0 && c.bottom <= innerHeight + 1; }""")
+        check("móvil: imagen y mini chip a la vez en pantalla (sin scroll)", vis)
+        await mob.evaluate("s => window.__glitch.setState(s)", multi)
+        await mob.wait_for_timeout(200)
         await mob.click("#btn-rack"); await mob.wait_for_timeout(400)
         await mob.screenshot(path=str(OUT / "11-movil-etapas.png"))
         await mob.click("#btn-rack"); await mob.wait_for_timeout(300)

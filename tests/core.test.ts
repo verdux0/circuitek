@@ -114,7 +114,7 @@ describe('randomize / variants', () => {
 
 describe('history', () => {
   it('undo / redo', () => {
-    const h = new History();
+    const h = new History<ReturnType<typeof defaultState>>();
     const a = defaultState();
     const b = { ...defaultState(), effect: 80 };
     h.push(a);

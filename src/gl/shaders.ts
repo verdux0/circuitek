@@ -43,7 +43,14 @@ uint ui(float a) { return uint(int(floor(a)) + 65536); }
 float h1(float a) { return float(hu(ui(a) ^ u_seed)) / 4294967295.0; }
 float h2(float a, float b) { return float(hu(hu(ui(a) ^ u_seed) ^ (ui(b) * 0x27d4eb2du))) / 4294967295.0; }
 
-vec3 src(vec2 uv) { return texture(u_tex, fract(uv)).rgb; }
+// Alpha travels with the samples: every texel that feeds the output contributes its alpha,
+// so displaced content keeps its coverage on transparent layers (opaque input -> alpha 1).
+float g_a = 0.0;
+vec3 src(vec2 uv) {
+  vec4 t = texture(u_tex, fract(uv));
+  g_a = max(g_a, t.a);
+  return t.rgb;
+}
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 float tri(float x) { return 1.0 - abs(1.0 - mod(x, 2.0)); }
 
@@ -308,6 +315,7 @@ vec3 procPass(vec2 uv) {
 
 void main() {
   vec2 uv = v_uv;
+  g_a = 0.0;
   vec3 r;
   if (u_pass == 0) {
     vec3 c = src(uv);
@@ -321,5 +329,99 @@ void main() {
   } else {
     r = src(uv);
   }
-  o = vec4(clamp(r, 0.0, 1.0), 1.0);
+  o = vec4(clamp(r, 0.0, 1.0), g_a);
+}`;
+
+/* ------------------------------ layer compositing ------------------------------ */
+
+/**
+ * Draws one layer as a transformed quad. u_m maps the unit square (v down, document
+ * convention) to document pixels; the output is GL-oriented like every other target.
+ */
+export const LAYER_VERT = /* glsl */ `#version 300 es
+in vec2 a_pos;
+uniform mat3 u_m;
+uniform vec2 u_doc;
+out vec2 v_uv;
+void main() {
+  vec2 q = a_pos * 0.5 + 0.5;
+  vec2 d = (u_m * vec3(q.x, 1.0 - q.y, 1.0)).xy;
+  v_uv = q;
+  gl_Position = vec4(d.x / u_doc.x * 2.0 - 1.0, 1.0 - d.y / u_doc.y * 2.0, 0.0, 1.0);
+}`;
+
+export const LAYER_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+uniform sampler2D u_tex;
+uniform float u_opacity;
+in vec2 v_uv;
+out vec4 o;
+void main() {
+  vec4 c = texture(u_tex, v_uv);
+  o = vec4(c.rgb, c.a * u_opacity);
+}`;
+
+/**
+ * Non-normal blend modes (W3C Compositing and Blending Level 1) of a layer already placed
+ * in document space (u_src) over the opaque backdrop (u_dst).
+ */
+export const COMP_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+uniform sampler2D u_src;
+uniform sampler2D u_dst;
+uniform float u_opacity;
+uniform int u_mode;
+in vec2 v_uv;
+out vec4 o;
+
+float lum(vec3 c) { return dot(c, vec3(0.3, 0.59, 0.11)); }
+vec3 clipColor(vec3 c) {
+  float l = lum(c);
+  float n = min(c.r, min(c.g, c.b));
+  float x = max(c.r, max(c.g, c.b));
+  if (n < 0.0) c = l + (c - l) * l / max(l - n, 1e-6);
+  if (x > 1.0) c = l + (c - l) * (1.0 - l) / max(x - l, 1e-6);
+  return c;
+}
+vec3 setLum(vec3 c, float l) { return clipColor(c + (l - lum(c))); }
+float sat(vec3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
+vec3 setSat(vec3 c, float s) {
+  float mx = max(c.r, max(c.g, c.b));
+  float mn = min(c.r, min(c.g, c.b));
+  return mx > mn ? (c - mn) * s / (mx - mn) : vec3(0.0);
+}
+float softLight(float b, float s) {
+  float d = b <= 0.25 ? ((16.0 * b - 12.0) * b + 4.0) * b : sqrt(b);
+  return s <= 0.5 ? b - (1.0 - 2.0 * s) * b * (1.0 - b) : b + (2.0 * s - 1.0) * (d - b);
+}
+float dodge(float b, float s) { return b == 0.0 ? 0.0 : (s >= 1.0 ? 1.0 : min(1.0, b / (1.0 - s))); }
+float burn(float b, float s) { return b >= 1.0 ? 1.0 : (s <= 0.0 ? 0.0 : 1.0 - min(1.0, (1.0 - b) / s)); }
+vec3 hardLight(vec3 b, vec3 s) {
+  return mix(b * 2.0 * s, 1.0 - (1.0 - b) * (1.0 - (2.0 * s - 1.0)), step(0.5, s));
+}
+
+vec3 blend(int m, vec3 b, vec3 s) {
+  if (m == 1) return b * s;                                   // multiply
+  if (m == 2) return b + s - b * s;                           // screen
+  if (m == 3) return hardLight(s, b);                         // overlay
+  if (m == 4) return min(b, s);                               // darken
+  if (m == 5) return max(b, s);                               // lighten
+  if (m == 6) return vec3(dodge(b.r, s.r), dodge(b.g, s.g), dodge(b.b, s.b));
+  if (m == 7) return vec3(burn(b.r, s.r), burn(b.g, s.g), burn(b.b, s.b));
+  if (m == 8) return hardLight(b, s);                         // hard-light
+  if (m == 9) return vec3(softLight(b.r, s.r), softLight(b.g, s.g), softLight(b.b, s.b));
+  if (m == 10) return abs(b - s);                             // difference
+  if (m == 11) return b + s - 2.0 * b * s;                    // exclusion
+  if (m == 12) return setLum(setSat(s, sat(b)), lum(b));      // hue
+  if (m == 13) return setLum(setSat(b, sat(s)), lum(b));      // saturation
+  if (m == 14) return setLum(s, lum(b));                      // color
+  if (m == 15) return setLum(b, lum(s));                      // luminosity
+  return s;
+}
+
+void main() {
+  vec4 s = texture(u_src, v_uv);
+  vec3 b = texture(u_dst, v_uv).rgb;
+  float a = s.a * u_opacity;
+  o = vec4(mix(b, clamp(blend(u_mode, b, s.rgb), 0.0, 1.0), a), 1.0);
 }`;

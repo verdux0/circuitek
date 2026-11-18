@@ -1,6 +1,7 @@
 /** Extra signal stages after the CCD: one "module" card per stage with bypass, LED and knobs. */
 import { STAGES, stageActive, type GlitchState, type StageId } from '../model';
 import { Knob } from './knob';
+import { ico } from './icons';
 
 export interface StagesHost {
   state: () => GlitchState;
@@ -18,6 +19,7 @@ export class StagesPanel {
     for (const def of STAGES) {
       const card = document.createElement('section');
       card.className = 'module';
+      card.dataset.collapse = `stage-${def.id}`;
       card.innerHTML = `
         <header class="module-head" title="${def.info}">
           <span class="led" aria-hidden="true"></span>
@@ -43,8 +45,9 @@ export class StagesPanel {
       const input = card.querySelector('input')!;
       input.addEventListener('change', () => this.host.edit((s) => { s.stages[def.id].on = input.checked; }, 'once'));
       const reset = document.createElement('button');
-      reset.className = 'hw-btn hw-btn-sm module-reset';
-      reset.textContent = 'Reset';
+      reset.className = 'hw-btn icon-sm module-reset';
+      reset.innerHTML = ico('reset');
+      reset.title = 'Restablecer los knobs de esta etapa';
       reset.setAttribute('aria-label', `Restablecer ${def.name}`);
       reset.addEventListener('click', () => this.host.edit((s) => {
         for (const p of def.params) s.stages[def.id].p[p.id] = p.def;

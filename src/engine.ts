@@ -1,14 +1,20 @@
 /**
- * Orchestrates rendering: GPU pass chain (preview / thumbnails / full-res export)
- * followed by the optional byte-level encoder stage in a worker.
+ * Orchestrates rendering of the layered document: GPU compositor (layers, per-layer effects,
+ * blend modes). The app passes `global = null` (every layer owns its effects); the global
+ * stage is kept in the pipeline for completeness (adjustment-style effects over the result).
+ * One WebGL context serves the live preview and the thumbnails (layer textures are shared);
+ * exports use a fresh context that streams layer by layer and is destroyed afterwards.
  */
-import { GLRenderer } from './gl/renderer';
+import { GLRenderer, type RenderJob, type SourceProvider } from './gl/renderer';
 import { EncoderClient } from './encoder/client';
 import { encParams, encSeed, type GlitchState } from './model';
+import type { DocState } from './doc';
 
 export const PREVIEW_MAX = 1280;
+/** Upper bound for the adaptive preview resolution when zoomed in. */
+export const PREVIEW_MAX_ZOOMED = 4096;
 export const THUMB_MAX = 320;
-/** Hard cap for imported images (megapixels) to keep exports within memory. */
+/** Hard cap for the document (megapixels) to keep exports within memory. */
 export const MAX_MEGAPIXELS = 48;
 
 export function fitSize(w: number, h: number, max: number): [number, number] {
@@ -16,75 +22,72 @@ export function fitSize(w: number, h: number, max: number): [number, number] {
   return [Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))];
 }
 
-async function scaled(bmp: ImageBitmap, w: number, h: number): Promise<ImageBitmap> {
-  if (bmp.width === w && bmp.height === h) return bmp;
-  return createImageBitmap(bmp, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
-}
-
 export class Engine {
-  readonly preview = new GLRenderer();
-  private thumb = new GLRenderer();
   private enc = new EncoderClient();
-  original: ImageBitmap | null = null;
+  readonly gl: GLRenderer;
   previewW = 0;
   previewH = 0;
-  /** Set when the import was downscaled to fit limits. */
-  downscaledFrom: [number, number] | null = null;
-
+  private previewMax = PREVIEW_MAX;
   private version = 0;
   private encBusy = false;
   private encQueued: (() => void) | null = null;
   onBusy: (busy: boolean) => void = () => {};
+  /** Called whenever new pixels land in the preview canvas (sync or from a worker). */
+  onPresent: () => void = () => {};
+  /** A per-layer encoder finished in the background: render again. */
+  onLayerReady: () => void = () => {};
 
-  async setImage(bmp: ImageBitmap): Promise<void> {
-    let w = bmp.width;
-    let h = bmp.height;
-    this.downscaledFrom = null;
-    const limit = Math.min(this.preview.maxSize, 16384);
-    const mp = (w * h) / 1e6;
-    if (Math.max(w, h) > limit || mp > MAX_MEGAPIXELS) {
-      const k = Math.min(limit / Math.max(w, h), Math.sqrt(MAX_MEGAPIXELS / mp));
-      this.downscaledFrom = [w, h];
-      [w, h] = [Math.floor(w * k), Math.floor(h * k)];
-    }
-    this.original = await scaled(bmp, w, h);
-    [this.previewW, this.previewH] = fitSize(w, h, PREVIEW_MAX);
-    const pv = await scaled(this.original, this.previewW, this.previewH);
-    this.preview.setSource(pv, this.previewW, this.previewH);
-    const [tw, th] = fitSize(w, h, THUMB_MAX);
-    const tb = await scaled(this.original, tw, th);
-    this.thumb.setSource(tb, tw, th);
-    this.version++;
+  constructor(private provider: SourceProvider) {
+    this.gl = new GLRenderer(provider, (img, p, seed) => this.enc.run(img, p, seed));
+    this.gl.onAsync = () => this.onLayerReady();
   }
 
-  get hasImage(): boolean {
-    return this.original !== null;
+  get maxSize(): number {
+    return Math.min(this.gl.maxSize, 16384);
+  }
+
+  /** Recomputes the preview size for a document; returns true if it changed. */
+  setDocSize(w: number, h: number, previewMax = this.previewMax): boolean {
+    this.previewMax = previewMax;
+    const [pw, ph] = fitSize(w, h, Math.min(previewMax, this.maxSize));
+    const changed = pw !== this.previewW || ph !== this.previewH;
+    this.previewW = pw;
+    this.previewH = ph;
+    return changed;
   }
 
   /**
-   * Draws the live preview into `ctx`. GPU result is immediate; if the encoder stage is
-   * active the worker result replaces it (latest-only queue so dragging stays fluid).
+   * Draws the live preview into `ctx`. GPU result is immediate; if the global encoder stage
+   * is active the worker result replaces it (latest-only queue so dragging stays fluid).
+   * `original` = no effects at all (A/B).
    */
-  renderPreview(state: GlitchState, ctx: CanvasRenderingContext2D): void {
-    if (!this.original) return;
+  renderPreview(doc: DocState, global: GlitchState | null, ctx: CanvasRenderingContext2D, original = false): void {
+    if (!doc.layers.length) return;
+    this.setDocSize(doc.w, doc.h);
     const v = ++this.version;
     const c = ctx.canvas;
-    if (c.width !== this.previewW || c.height !== this.previewH) {
-      c.width = this.previewW;
-      c.height = this.previewH;
+    const [w, h] = [this.previewW, this.previewH];
+    if (c.width !== w || c.height !== h) {
+      c.width = w;
+      c.height = h;
     }
-    this.preview.render(state, this.previewW, this.previewH);
-    const p = encParams(state);
+    this.gl.render({ doc, global: original ? null : global, layerFx: !original, w, h });
+    const p = original || !global ? null : encParams(global);
     if (!p) {
-      ctx.drawImage(this.preview.canvas, 0, 0);
+      ctx.drawImage(this.gl.canvas, 0, 0);
+      this.onPresent();
       return;
     }
-    const img = this.preview.readPixels();
+    const img = this.gl.readPixels();
     const job = () => {
       this.encBusy = true;
       this.onBusy(true);
-      this.enc.run(img, p, encSeed(state)).then((out) => {
-        if (v === this.version) ctx.putImageData(out, 0, 0);
+      this.enc.run(img, p, encSeed(global!)).then((out) => {
+        // Latest-only: drop results that a newer render (or a resize) made stale.
+        if (v === this.version && c.width === w && c.height === h) {
+          ctx.putImageData(out, 0, 0);
+          this.onPresent();
+        }
         this.encBusy = false;
         const next = this.encQueued;
         this.encQueued = null;
@@ -96,38 +99,31 @@ export class Engine {
     else job();
   }
 
-  drawOriginal(ctx: CanvasRenderingContext2D): void {
-    if (!this.original) return;
-    ctx.drawImage(this.original, 0, 0, ctx.canvas.width, ctx.canvas.height);
+  /** Full pipeline (all encoders awaited) at an arbitrary size. */
+  private async finish(r: GLRenderer, job: RenderJob, stream = false): Promise<ImageData> {
+    const img = await r.renderFinal(job, stream);
+    const p = job.global ? encParams(job.global) : null;
+    return p ? this.enc.run(img, p, encSeed(job.global!)) : img;
   }
 
-  /** Full pipeline (GPU + encoder) at thumbnail size. */
-  async renderThumb(state: GlitchState): Promise<ImageData> {
-    const [w, h] = this.thumb.sourceSize;
-    return this.finish(this.thumb, state, w, h);
+  async renderThumb(doc: DocState, global: GlitchState | null): Promise<ImageData> {
+    const [w, h] = fitSize(doc.w, doc.h, THUMB_MAX);
+    return this.finish(this.gl, { doc, global, layerFx: true, w, h });
   }
 
-  /** Full pipeline at preview size, returned as pixels (used by tests and capture). */
-  async renderPreviewPixels(state: GlitchState): Promise<ImageData> {
-    return this.finish(this.preview, state, this.previewW, this.previewH);
+  /** Full pipeline at preview size, returned as pixels (used by tests). */
+  async renderPreviewPixels(doc: DocState, global: GlitchState | null): Promise<ImageData> {
+    this.setDocSize(doc.w, doc.h);
+    return this.finish(this.gl, { doc, global, layerFx: true, w: this.previewW, h: this.previewH });
   }
 
-  private async finish(r: GLRenderer, state: GlitchState, w: number, h: number): Promise<ImageData> {
-    r.render(state, w, h);
-    const img = r.readPixels();
-    const p = encParams(state);
-    return p ? this.enc.run(img, p, encSeed(state)) : img;
-  }
-
-  /** Renders the original at full resolution and encodes it to PNG or JPEG. */
-  async exportFull(state: GlitchState, type: 'image/png' | 'image/jpeg', onStep: (msg: string) => void = () => {}): Promise<{ blob: Blob; w: number; h: number }> {
-    if (!this.original) throw new Error('No hay imagen');
-    const { width: w, height: h } = this.original;
-    onStep(`GPU ${w}×${h}`);
-    const r = new GLRenderer();
+  /** Renders the document at full resolution and encodes it to PNG or JPEG. */
+  async exportFull(doc: DocState, global: GlitchState | null, type: 'image/png' | 'image/jpeg', onStep: (msg: string) => void = () => {}): Promise<{ blob: Blob; w: number; h: number }> {
+    const { w, h } = doc;
+    onStep(`GPU ${w}×${h} · ${doc.layers.length} capa${doc.layers.length === 1 ? '' : 's'}`);
+    const r = new GLRenderer(this.provider, (img, p, seed) => this.enc.run(img, p, seed));
     try {
-      r.setSource(this.original, w, h);
-      const img = await this.finish(r, state, w, h);
+      const img = await this.finish(r, { doc, global, layerFx: true, w, h }, true);
       onStep('Codificando');
       const cv = new OffscreenCanvas(w, h);
       cv.getContext('2d')!.putImageData(img, 0, 0);
@@ -136,5 +132,9 @@ export class Engine {
     } finally {
       r.dispose();
     }
+  }
+
+  get memory(): { caches: number; sources: number; work: number } {
+    return this.gl.memory;
   }
 }

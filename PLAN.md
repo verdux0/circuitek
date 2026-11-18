@@ -7,17 +7,21 @@ index.html ── src/main.ts (controlador UI, estado, historial, atajos)
                 │
                 ├── src/model.ts      pines, 15 pares, etapas, estado serializable, plan de render
                 ├── src/presets.ts    presets de fábrica, aleatorio, variantes (deterministas)
-                ├── src/history.ts    deshacer / rehacer
+                ├── src/doc.ts        documento: lienzo + capas (transformaciones, fusión), composición Canvas2D
+                ├── src/text.ts       capas de texto: medida y dibujo vectorial, carga de fuentes (fonts.ts = Fontsource)
+                ├── src/history.ts    deshacer / rehacer (ajustes glitch + documento)
                 ├── src/engine.ts     orquesta preview / miniaturas / export
-                │     ├── src/gl/renderer.ts   WebGL2, ping-pong de framebuffers
+                │     ├── src/gl/renderer.ts   WebGL2: compositor de capas, caché por capa (LRU), fusión en shader, ping-pong compartido
                 │     │     └── src/gl/shaders.ts   shader "uber": CCD, bus, buffer, DSP
                 │     └── src/encoder/client.ts → worker.ts (Web Worker)
                 │           └── src/encoder/bytes.ts  corrupción JPEG + pixel sort (puro)
-                └── src/ui/  knob.ts · rewire.ts (PCB) · stages.ts (módulos)
+                ├── src/projects.ts   proyectos guardados (IndexedDB) + archivos .glitch
+                └── src/ui/  knob.ts · rewire.ts (PCB: modo compact = mini chip bajo el visor, full = vista ampliada; ver PLAN-UI.md) · stages.ts (módulos) · contextmenu.ts (clic derecho)
+                             viewport.ts (Konva: zoom/pan, Transformer) · layers.ts (panel, SortableJS) · textedit.ts (textarea superpuesto)
 ```
 
 Cadena de señal (orden fijo):
-`imagen → cable 1 → cable 2 → cable 3 → bus/ADC → buffer → procesador → codificador JPEG → pantalla`
+`por capa: textura → (efectos propios → caché) → modo de fusión` → acumulador → efectos globales: `cable 1 → cable 2 → cable 3 → bus/ADC → buffer → procesador → codificador JPEG → pantalla`
 
 - Las etapas GPU son pasadas de un mismo shader; cada una lee la textura de la anterior.
 - El codificador trabaja con bytes reales en un Worker (fuera del hilo principal).
@@ -61,5 +65,5 @@ Cadena de señal (orden fijo):
 1. Esqueleto: Vite+TS, renderer WebGL2, importar, exportar ✔
 2. Los 15 modos + multicable ✔
 3. Etapas GPU + codificador en worker ✔
-4. UI: knobs, PCB Rewire, módulos, galería, presets, variantes, A/B, deshacer ✔
+4. UI: knobs, PCB Rewire, módulos, proyectos guardados (antes galería), presets, variantes, A/B, deshacer ✔
 5. Tests unitarios + verificación E2E en Chrome headless con hojas de contacto ✔

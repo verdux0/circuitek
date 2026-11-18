@@ -4,9 +4,24 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#e8e6e1" />
+    <meta name="color-scheme" content="light dark" />
     <meta name="description" content="Editor de fotos glitch 100% local que simula el circuit bending de una cámara." />
     <title>glitch editor · circuit bending</title>
+    <!-- UI typefaces (Google Fonts): Nunito for the interface, JetBrains Mono for labels and values. Only the weights the CSS uses. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700;800&family=Nunito:wght@500;600;700;800;900&display=swap" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23151515'/%3E%3Crect x='9' y='7' width='14' height='18' rx='2' fill='%23333'/%3E%3Cpath d='M5 11h4M5 16h4M5 21h4M23 11h4M23 16h4M23 21h4' stroke='%23d8a640' stroke-width='2'/%3E%3Cpath d='M8 11c8 2 8 8 16 10' stroke='%23ff4a1c' stroke-width='2.4' fill='none'/%3E%3C/svg%3E" />
+    <script>
+      // Theme before first paint (no flash): saved choice, else the system setting.
+      try {
+        var t = localStorage.getItem('glitch-editor:theme');
+        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.dataset.theme = t;
+      } catch (e) {
+        document.documentElement.dataset.theme = 'light';
+      }
+    </script>
   </head>
   <body>
     <div class="app">
@@ -14,23 +29,26 @@
         <header class="topbar">
           <h1 class="logo"><span class="logo-word" data-t="GL1TCH">GL1TCH</span><span class="logo-sub">editor<br />circuit&nbsp;bent</span></h1>
           <div class="topbar-actions">
-            <button class="hw-btn icon" id="btn-import" aria-label="Importar imagen" title="Importar imagen (I)">
-              <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M4 15v4h16v-4" /></svg>
-            </button>
-            <button class="hw-btn icon" id="btn-undo" aria-label="Deshacer" title="Deshacer (Ctrl+Z)">
-              <svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3" /></svg>
-            </button>
-            <button class="hw-btn icon" id="btn-redo" aria-label="Rehacer" title="Rehacer (Ctrl+Shift+Z)">
-              <svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5M20 9H9a5 5 0 0 0 0 10h3" /></svg>
-            </button>
+            <button class="hw-btn icon" id="btn-new" aria-label="Documento nuevo" title="Documento nuevo (la sesión actual se puede recuperar con Ctrl+Z)"><i data-ico="new"></i></button>
+            <button class="hw-btn icon" id="btn-import" aria-label="Añadir imágenes" title="Añadir imágenes como capas (I)"><i data-ico-add="image"></i></button>
+            <button class="hw-btn icon" id="btn-undo" aria-label="Deshacer" title="Deshacer (Ctrl+Z)"><i data-ico="undo"></i></button>
+            <button class="hw-btn icon" id="btn-redo" aria-label="Rehacer" title="Rehacer (Ctrl+Shift+Z)"><i data-ico="redo"></i></button>
+            <button class="hw-btn icon" id="btn-theme" aria-label="Cambiar a modo oscuro" title="Modo claro / oscuro"><span class="theme-dark"><i data-ico="moon"></i></span><span class="theme-light"><i data-ico="sun"></i></span></button>
           </div>
         </header>
 
         <div class="viewer" id="viewer">
-          <canvas id="screen" aria-label="Vista previa de la imagen"></canvas>
+          <div class="stage" id="stage" aria-label="Visor: rueda = zoom · Ctrl/Alt + arrastrar = desplazar · arrastra una capa para moverla"></div>
+          <canvas id="screen" hidden aria-hidden="true"></canvas>
+          <div class="view-hud" id="view-hud" role="toolbar" aria-label="Zoom">
+            <button data-z="out" aria-label="Alejar" title="Alejar (−)"><i data-ico="zoom-out"></i></button>
+            <button data-z="pct" id="zoom-pct" title="Zoom 100 % (1)">100%</button>
+            <button data-z="in" aria-label="Acercar" title="Acercar (+)"><i data-ico="zoom-in"></i></button>
+            <button data-z="fit" aria-label="Encajar en pantalla" title="Encajar en pantalla (0)"><i data-ico="fit"></i></button>
+          </div>
           <div class="viewer-empty" id="empty">
-            <button class="viewer-cta" id="btn-empty">Suelta una foto o pulsa para importar</button>
-            <p>Tus fotos no salen de tu equipo. Todo se procesa en el navegador; no se sube nada.</p>
+            <button class="viewer-cta" id="btn-empty"><i data-ico-add="image"></i> Suelta una o varias fotos, o pulsa para importar</button>
+            <p>Tus fotos no salen de tu equipo. Todo se procesa en el navegador; no se sube nada. La sesión se guarda sola en este navegador.</p>
             <button class="viewer-link" id="btn-sample">o prueba con la carta de ajuste</button>
           </div>
           <div class="viewer-badge" id="badge" hidden>ORIGINAL</div>
@@ -38,56 +56,97 @@
           <div class="drop-hint">Suelta para importar</div>
         </div>
 
-        <section class="gallery" id="gallery" aria-label="Capturas recientes"></section>
-
+        <div class="fx-target" id="fx-target">
+          <i data-ico="fx"></i>
+          <span class="fx-target-label">EFECTOS DE</span>
+          <span class="fx-target-name" id="fx-target-name">ninguna capa seleccionada</span>
+        </div>
         <nav class="controls" aria-label="Controles principales">
-          <button class="hw-btn chip-btn" id="btn-rewire" aria-label="Recablear el CCD" title="Recablear (W)">
-            <svg viewBox="0 0 24 24"><rect x="7" y="5" width="10" height="14" rx="1.5" /><path d="M4 8h3M4 12h3M4 16h3M17 8h3M17 12h3M17 16h3" /></svg>
-          </button>
-          <button class="hw-btn pair-btn" id="btn-pair" title="Cables activos — pulsa para recablear">
-            <span class="pair-label" id="pair-label">RG+TG</span>
-            <span class="pair-name" id="pair-name"></span>
-          </button>
-          <div class="ctl-knob" id="knob-effect"></div>
-          <div class="ctl-knob" id="knob-filter"></div>
-          <button class="hw-btn capture-btn" id="btn-capture" title="Capturar a la galería (Espacio)">Capture</button>
+          <!-- Mini CCD chip: rewire right here (src/ui/rewire.ts, compact mode). Its expand button opens the full sheet. -->
+          <div class="mini-rewire" id="mini-rewire"></div>
+          <div class="ctl-main">
+            <div class="ctl-knob" id="knob-effect"></div>
+            <div class="ctl-knob" id="knob-filter"></div>
+            <button class="hw-btn capture-btn" id="btn-capture" aria-label="Capturar como proyecto nuevo" title="Capturar: guarda el estado actual como proyecto nuevo (Espacio)"><i data-ico="camera"></i></button>
+          </div>
         </nav>
+
+        <section class="projects" id="projects" aria-labelledby="projects-title">
+          <header class="projects-head">
+            <h2 id="projects-title">Proyectos <span class="project-count" id="project-count"></span></h2>
+            <span class="project-current" id="project-current" aria-live="polite"></span>
+            <div class="projects-actions">
+              <button class="hw-btn icon-sm" id="btn-save" aria-label="Guardar proyecto" title="Guardar proyecto (Ctrl+S)"><i data-ico="save"></i></button>
+              <button class="hw-btn icon-sm" id="btn-save-new" aria-label="Guardar como proyecto nuevo" title="Guardar como proyecto nuevo (Ctrl+Shift+S)"><i data-ico="duplicate"></i></button>
+              <button class="hw-btn icon-sm" id="btn-project-import" aria-label="Abrir archivo de proyecto" title="Abrir un archivo de proyecto .glitch"><i data-ico="file-up"></i></button>
+            </div>
+          </header>
+          <div class="project-grid" id="project-grid"></div>
+        </section>
+
       </main>
 
-      <aside class="rack" id="rack" aria-label="Etapas y herramientas">
+      <aside class="rack" id="rack" aria-label="Capas, efectos y herramientas">
         <div class="rack-inner">
-          <div class="rack-tools">
-            <button class="hw-btn" id="btn-random" title="Aleatorizar (R)">Aleatorio</button>
-            <button class="hw-btn" id="btn-variants" title="8 variantes del estado actual (V)">Variantes</button>
-            <button class="hw-btn" id="btn-ab" title="Mantén pulsado para ver el original (B)">A/B</button>
-            <button class="hw-btn accent" id="btn-png" title="Exportar PNG a resolución completa">PNG</button>
-            <button class="hw-btn accent" id="btn-jpg" title="Exportar JPG a resolución completa">JPG</button>
+          <section class="module tools" data-collapse="tools">
+            <div class="module-head"><h3>Herramientas</h3></div>
+            <div class="rack-tools">
+              <button class="hw-btn" id="btn-random" aria-label="Aleatorio" title="Efectos aleatorios para la capa (R)"><i data-ico="dices"></i></button>
+              <button class="hw-btn" id="btn-variants" aria-label="Variantes" title="8 variantes de los efectos de la capa (V)"><i data-ico="variants"></i></button>
+              <button class="hw-btn" id="btn-ab" aria-label="Ver original" title="Mantén pulsado para ver el original sin efectos (B)"><i data-ico="compare"></i></button>
+              <button class="hw-btn accent" id="btn-png" aria-label="Exportar PNG" title="Exportar PNG a resolución completa"><i data-ico="download"></i><small>PNG</small></button>
+              <button class="hw-btn accent" id="btn-jpg" aria-label="Exportar JPG" title="Exportar JPG a resolución completa"><i data-ico="download"></i><small>JPG</small></button>
+            </div>
+          </section>
+          <div class="rack-tabs" role="tablist" aria-label="Panel">
+            <button class="rack-tab" role="tab" id="tab-layers" data-tab="layers" aria-controls="panel-layers"><i data-ico="layers"></i> Capas</button>
+            <button class="rack-tab" role="tab" id="tab-fx" data-tab="fx" aria-controls="panel-fx"><i data-ico="fx"></i> Efectos</button>
           </div>
-          <div class="rack-row">
-            <label class="field">
-              <span>SEED</span>
-              <input id="seed" type="number" min="0" max="999999" step="1" inputmode="numeric" />
-            </label>
-            <button class="hw-btn icon" id="btn-dice" aria-label="Seed nueva" title="Seed nueva">
-              <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" /><circle cx="9" cy="9" r="1.3" /><circle cx="15" cy="15" r="1.3" /><circle cx="15" cy="9" r="1.3" /><circle cx="9" cy="15" r="1.3" /></svg>
-            </button>
+          <div class="tab-panel" id="panel-layers" role="tabpanel" aria-labelledby="tab-layers" data-panel="layers">
+            <div id="layers"></div>
           </div>
-          <div class="rack-row">
-            <select id="preset-select" aria-label="Presets de fábrica"></select>
-            <button class="hw-btn hw-btn-sm" id="btn-preset-save" title="Guardar el estado como preset JSON">Guardar</button>
-            <button class="hw-btn hw-btn-sm" id="btn-preset-load" title="Cargar un preset JSON">Cargar</button>
+          <div class="tab-panel" id="panel-fx" role="tabpanel" aria-labelledby="tab-fx" data-panel="fx" hidden>
+            <section class="module fx-module">
+              <div class="module-head">
+                <h3><i data-ico="fx"></i> Efectos de <span class="fx-panel-name" id="fx-panel-name"></span></h3>
+                <button class="hw-btn icon-sm" id="btn-fx-clear" aria-label="Quitar los efectos de la capa" title="Quitar todos los efectos de esta capa"><i data-ico="eraser"></i></button>
+              </div>
+              <button class="hw-btn fx-cables" id="btn-fx-rewire" title="Recablear el CCD (W)">
+                <i data-ico="chip"></i>
+                <span class="fx-cables-text"><span class="pair-label" id="fx-pair-label"></span><span class="pair-name" id="fx-pair-name"></span></span>
+                <small>RECABLEAR</small>
+              </button>
+              <div class="rack-row">
+                <label class="field">
+                  <span>SEED</span>
+                  <input id="seed" type="number" min="0" max="999999" step="1" inputmode="numeric" />
+                </label>
+                <button class="hw-btn icon" id="btn-dice" aria-label="Seed nueva" title="Seed nueva"><i data-ico="dices"></i></button>
+              </div>
+              <div class="rack-row">
+                <select id="preset-select" aria-label="Presets de fábrica"></select>
+                <button class="hw-btn icon" id="btn-preset-save" aria-label="Guardar preset" title="Guardar los efectos de la capa como preset JSON"><i data-ico="save"></i></button>
+                <button class="hw-btn icon" id="btn-preset-load" aria-label="Cargar preset" title="Cargar un preset JSON en la capa"><i data-ico="open"></i></button>
+              </div>
+            </section>
+            <div id="stages"></div>
           </div>
-          <div id="stages"></div>
-          <p class="rack-foot">
-            <b>Atajos</b> · W recablear · R aleatorio · V variantes · B (mantener) original · Espacio captura · Ctrl+Z / Ctrl+Shift+Z · Knobs: arrastra ↕, Shift fino, doble clic reset.
-          </p>
+          <details class="rack-foot">
+            <summary>Atajos</summary>
+            <p>
+              <b>Visor</b> · rueda zoom · Ctrl+rueda ↕ · Alt/Shift+rueda ↔ · Ctrl/Alt/botón central + arrastrar = mano · 2 dedos = pellizco · + − 0 1 zoom · clic derecho = menú de la capa (girar, espejo, copiar…).<br />
+              <b>Capas</b> · arrastrar mover · asas escalar (Shift libre, Alt desde el centro) · asa superior girar (Shift = pasos de 15°) · flechas mover (Shift ×10) · [ ] girar 90° · H / Shift+H espejo · Ctrl+C / Ctrl+X / Ctrl+V copiar, cortar, pegar · Ctrl+J duplicar · F2 o doble clic renombrar · Supr borrar · T capa de texto.<br />
+              <b>Efectos</b> (capa seleccionada o, sin selección, la imagen principal) · W vista ampliada del recableado (el mini chip bajo el visor se edita directamente) · R aleatorio · V variantes · B (mantener) original · Ctrl+Z / Ctrl+Shift+Z · Knobs: arrastra ↕, rueda, Shift fino, doble clic reset.<br />
+              <b>Proyectos</b> · Ctrl+S guardar · Ctrl+Shift+S o Espacio guardar como nuevo · doble clic en el nombre para renombrar.
+            </p>
+          </details>
         </div>
       </aside>
     </div>
 
-    <button class="hw-btn rack-toggle" id="btn-rack" aria-controls="rack" aria-expanded="false">Etapas</button>
+    <button class="hw-btn rack-toggle" id="btn-rack" aria-controls="rack" aria-expanded="false" aria-label="Abrir panel"><span class="when-closed"><i data-ico="layers"></i></span><span class="when-open"><i data-ico="close"></i></span></button>
 
-    <input type="file" id="file" accept="image/*" hidden />
+    <input type="file" id="file" accept="image/*" multiple hidden />
     <input type="file" id="preset-file" accept=".json,application/json" hidden />
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <div class="overlay" id="progress" hidden>
@@ -98,11 +157,11 @@
         <header class="sheet-head">
           <h2 id="var-title">Variantes</h2>
           <div class="sheet-actions">
-            <button class="hw-btn hw-btn-sm" id="btn-var-more">Otras 8</button>
-            <button class="hw-btn sheet-close" data-act="close">Cerrar</button>
+            <button class="hw-btn icon" id="btn-var-more" aria-label="Otras 8 variantes" title="Otras 8"><i data-ico="more"></i></button>
+            <button class="hw-btn icon sheet-close" data-act="close" aria-label="Cerrar" title="Cerrar (Esc)"><i data-ico="close"></i></button>
           </div>
         </header>
-        <p class="sheet-intro">Mutaciones cercanas del estado actual: otros cables, otra seed, knobs movidos. Toca una para quedártela.</p>
+        <p class="sheet-intro">Mutaciones cercanas de los efectos de la capa: otros cables, otra seed, knobs movidos. Toca una para quedártela.</p>
         <div class="variant-grid" id="variant-grid"></div>
       </section>
     </div>
