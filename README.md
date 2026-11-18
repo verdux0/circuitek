@@ -1,6 +1,6 @@
 # glitch editor · circuit bent
 
-Editor de fotos **100 % local** que simula el *circuit bending* de una cámara digital. Importas una foto, **puenteas pines del chip CCD con cables** directamente bajo la imagen y giras knobs. Ninguna imagen sale de tu equipo: todo se procesa en el navegador (WebGL2 + Web Worker), sin servidor ni peticiones de red.
+Editor de fotos **100 % local** que simula el *circuit bending* de una cámara digital. Importas una foto, **puenteas pines del chip CCD con cables** directamente bajo la imagen y giras knobs. Ninguna imagen sale de tu equipo: todo se procesa en el navegador (WebGL2 + Web Workers), sin servidor. La única función que usa la red es el [buscador de GIFs](#buscar-gif-gifcities--internet-archive), y solo cuando buscas.
 
 Inspirado en [Glitchy Camera](https://glitchycam.com), llevado a la edición de fotos importadas: varios cables a la vez, etapas extra de la cadena de señal, seed reproducible y exportación a resolución completa.
 
@@ -10,9 +10,11 @@ Inspirado en [Glitchy Camera](https://glitchycam.com), llevado a la edición de 
 |---|---|---|
 | ![Mini chip](docs/screenshots/13-mini-chip-cable.png) | ![Vista ampliada](docs/screenshots/14-vista-ampliada-mismo-cable.png) | ![Móvil](docs/screenshots/15-movil-mini-chip.png) |
 
+**Pruébalo en el navegador:** https://verdux0.github.io/glitch-editor/ (GitHub Pages; ver [Usarlo en el teléfono](#usarlo-en-el-teléfono)).
+
 ## Arrancar
 
-Requisitos: Node 18+ y un navegador con WebGL2 (Chrome, Edge, Firefox, Safari recientes).
+Requisitos: Node 22.12 o superior (24 LTS recomendado, el que usa la integración continua; lo exige vitest) y un navegador con WebGL2 (Chrome, Edge, Firefox o Safari recientes).
 
 ```bash
 npm install
@@ -25,6 +27,7 @@ Otras órdenes:
 npm run build          # carpeta estática en dist/ (sírvela con `npm run preview`)
 npm run build:single   # un único archivo: dist-single/index.html (se abre con doble clic)
 npm test               # tests unitarios (vitest)
+npm run dev:phone      # servidor en la red local con HTTPS, para el móvil (ver «Usarlo en el teléfono»)
 ```
 
 ## Cómo se usa
@@ -252,10 +255,52 @@ En el panel **Herramientas**, **Exportar · PNG ▾**:
 
 Detalles de diseño en [PLAN.md](PLAN.md).
 
+## Buscar GIF (GifCities · Internet Archive)
+
+![Buscador en móvil](docs/screenshots/41-gifs-movil-resultados.png)
+
+El botón de la lupa, junto a Importar (atajo **G**), abre un buscador de [GifCities](https://gifcities.org): los más de 4 millones de GIF que el Internet Archive salvó de GeoCities. Tocas uno, se descarga y entra como capa animada, igual que si lo hubieras arrastrado.
+
+- **Búsqueda mientras escribes** (con debounce de 400 ms; la anterior se cancela) o con Intro. 48 resultados cada vez, con **Cargar más**. Estados de carga, sin resultados, error (con *Reintentar*) y sin conexión.
+- Cada resultado enlaza a **su página original en la Wayback Machine** y lleva el crédito *Fuente: GifCities · Internet Archive*.
+- La descarga muestra el progreso y se puede **cancelar**.
+- **Privacidad:** la app no hace ninguna petición hasta que buscas. Entonces contacta con `gifcities.archive.org` (envía solo el texto de búsqueda) y `blob.gifcities.org` (descarga las imágenes), sin cookies, sin `Referer` y sin analytics. Tus imágenes y tus datos no salen de la app.
+- **Seguridad:** solo https y esos dominios. Límites de 10 MB por GIF (la descarga se corta al superarlos), 600 fotogramas, 2048 px de lado y tiempo máximo de espera. Nada remoto se inserta como HTML.
+- **Derechos:** son GIF de páginas personales de 1994-2009, **sin licencia clara: no son libres de derechos**. Tú eres responsable de lo que uses o publiques. **Esta búsqueda no filtra contenido adulto.**
+- **Cómo funciona:** usa la API JSON original de GifCities (`gifcities.archive.org/api/v1/gifsearch`), que permite CORS. La búsqueda nueva de gifcities.org (con filtro de contenido adulto) es HTML sin CORS y no se puede leer desde otra web sin un proxy. La API antigua no está documentada: si un día deja de responder, el panel lo dice y ofrece **Abrir gifcities.org** para descargar el GIF allí y arrastrarlo o pegarlo en la app. Detalles en [PLAN-GIFS.md](PLAN-GIFS.md).
+
+## Usarlo en el teléfono
+
+**1. La página publicada (lo más fácil).** Abre {PAGES} en el navegador del móvil. Es HTTPS, así que funcionan todas las funciones que exigen contexto seguro. Se publica sola en cada push a `main` (`.github/workflows/pages.yml`). La primera vez, el dueño del repositorio tiene que activarla en *Settings → Pages → Build and deployment → Source: GitHub Actions*.
+*Estado:* el build se ha comprobado servido bajo `/glitch-editor/` (sin errores 404, en escritorio y a 390 px). La página publicada y su uso en un móvil real están **sin comprobar**.
+
+**2. Desde tu ordenador, en la red local (para desarrollar).**
+
+```bash
+npm install
+npm run dev:phone
+```
+
+- Arranca Vite en la red local (`--host`) con **HTTPS** y un certificado autofirmado ([@vitejs/plugin-basic-ssl](https://github.com/vitejs/vite-plugin-basic-ssl)), y muestra las direcciones al arrancar:
+  ```
+  ➜  Local:   https://localhost:5173/
+  ➜  Network: https://192.168.1.180:5173/
+  ```
+- El móvil y el ordenador tienen que estar **en la misma Wi-Fi**. Abre en el móvil la dirección *Network* de tu Wi-Fi; si salen varias, las de adaptadores virtuales (WSL, VirtualBox, Docker) no sirven.
+- El certificado es autofirmado, así que el navegador avisará: en Chrome para Android, *Configuración avanzada → Acceder a… (sitio no seguro)*; en Safari para iOS, *Mostrar detalles → visitar este sitio web*. **(Sin comprobar en un dispositivo real.)**
+- Windows puede pedir permiso en el cortafuegos para Node.js la primera vez: permítelo **solo en redes privadas**. **(Sin comprobar.)**
+- Por qué HTTPS: por IP de la red local con `http://` el navegador no da contexto seguro, y algunas funciones (portapapeles, guardar en carpeta, almacenamiento persistente) dejan de estar disponibles.
+- *Comprobado:* `npm run dev:phone` arranca con HTTPS y muestra las direcciones de red. Abierta por la IP de la LAN desde Chrome con pantalla de 390 px y emulación táctil: contexto seguro, WebGL2, portapapeles y almacenamiento disponibles, la app carga y procesa sin errores.
+
+**3. Un único archivo.** `npm run build:single` genera `dist-single/index.html`, con todo dentro. En el ordenador se abre con doble clic. Abrir archivos locales en el móvil depende del sistema y del navegador (**sin comprobar**); es más fiable usar la opción 1 o la 2.
+
+**En el móvil:** importar desde la galería o la cámara (selector de archivos), pellizcar con dos dedos para hacer zoom, arrastrar capas, mini chip táctil, vídeos con reproducción en línea (empiezan silenciados), buscador de GIF y exportar. En el móvil no se puede elegir carpeta: los archivos van a las descargas del navegador. Si se puede exportar MP4 depende del codificador del teléfono; si no lo hay, la opción sale desactivada con el motivo. Todo esto está **sin comprobar en un dispositivo real**: solo se ha probado con la emulación móvil de Chrome. La app no es instalable como PWA (no tiene manifiesto ni service worker).
+
 ## Verificación
 
 - `npm test`: PRNG, serialización y saneado de presets, plan de render, aleatorio y variantes deterministas, corrupción JPEG (no rompe cabeceras ni marcadores), pixel sort (solo reordena) y, para vídeo, la seed por fotograma, índice de fotograma ↔ tiempo, estimación de fps, formato del tiempo, límites de velocidad y detección de GIF animado.
 - `tools/verify.py` (Playwright + Chrome): genera las hojas de contacto de `docs/screenshots/` y comprueba que los 15 pares son distintos entre sí, que cada knob altera la imagen, el determinismo (también tras recargar), la ida y vuelta de presets, la exportación a resolución completa, la importación de JPG/PNG/WebP (cada archivo como capa), el arrastre de cables y knobs, el **mini chip** (crear cable arrastrando y con teclado, slider de resistencia con deshacer, quitar cable, máximo 3, mismo estado que la vista ampliada en ambos sentidos, W abre la vista ampliada), que el visor + mini chip + knobs caben sin scroll a 1400×1000 y 1280×800, que nada desborda a 390 px, deshacer/rehacer, que no hay peticiones de red externas y que no hay errores en consola. Resultado en `docs/screenshots/verificacion.txt`.
+- `tools/verify_gifsearch.py` (lo ejecuta `verify.py`; también funciona solo): el buscador **con la red interceptada** (nada llega al Internet Archive), a 390 px y con emulación táctil. Comprueba cero peticiones al cargar y al abrir el panel, el debounce (una petición por búsqueda), 48 resultados y «Cargar más», enlaces a la Wayback Machine y crédito, miniaturas sin `Referer` y solo de los dominios esperados, los estados sin resultados, error y sin conexión, que el contenido remoto no se ejecuta como HTML, cancelar una descarga, que un GIF se carga como capa animada y que la consola queda limpia. Los tests de `tests/gifsearch.test.ts` usan una respuesta real guardada como fixture y nunca llaman a la red.
 - `tools/verify_export.py` (lo ejecuta `verify.py`; también funciona solo): botón y lista (role=menu, teclado, formatos desactivados con su motivo), PNG por defecto (firma, tamaño y nombre de plantilla), JPG desde el diálogo (calidad, escala, vista previa del nombre, se decodifica), predeterminado tras recargar y restablecer, GIF generado y de vídeo con los tres modos de bucle (cabecera, NETSCAPE2.0 infinito, número de fotogramas, retardos, tamaño y **costura último → primero frente al paso normal**), aviso y reparto de retardos a 30 fps, MP4 generado y de vídeo (H.264, tamaño, fps, duración, audio AAC, con el parser de Mediabunny) que se reproduce en un `<video>`, determinismo (dos GIF idénticos byte a byte), exportar a carpeta (una carpeta OPFS en lugar del selector nativo, que Playwright no puede manejar), cancelar MP4 y GIF a mitad sin dejar archivo, interfaz viva durante la exportación, y lista y diálogo en móvil.
 - `tools/verify_media.py` (lo ejecuta `verify.py`; también funciona solo): graba en el propio Chrome vídeos de prueba (WebM y MP4 a 720p/1080p con audio, un MP4 con rotación de 90° en los metadatos, un GIF animado y un archivo corrupto; ver `tools/media_fixtures.py`, sin ffmpeg) y comprueba importar, movimiento, pausa + knob, que en pausa no se renderiza en bucle, búsqueda, ±1 fotograma, velocidad, bucle, volumen, silencio, atajos, Glitch animado, el aviso del codificador, captura y export a resolución completa, el hash determinista del mismo fotograma, los fps a 720p/1080p, la rotación, GIF con `ImageDecoder` y con omggif (`?gif=omggif`), cambiar entre vídeo e imagen (y deshacer), recargar sin dejar `<video>` colgados, móvil a 390 px, cero errores en consola y cero peticiones externas.
 
@@ -273,13 +318,18 @@ En la consola: `window.__glitch` → `loadSample()`, `getState()`, `setState(s)`
 
 - Con el codificador activo, la vista previa llega unos milisegundos después del giro del knob (se calcula en el worker).
 - La corrupción JPEG usa el codificador del navegador: con la misma seed el resultado es idéntico en el mismo navegador, pero puede variar un poco entre motores (Chrome y Firefox).
-- No hay entrada de cámara.
+- No hay entrada de cámara en directo (sí se puede importar una foto o un vídeo hechos con la cámara del móvil).
+- El buscador de GIF depende de una API antigua del Internet Archive sin documentar: puede dejar de funcionar sin aviso (queda el flujo manual), y no filtra contenido adulto.
 - Mientras se reproduce no se aplican JPEG ni pixel sort (ver arriba); el resto de la cadena sí.
 - El índice de fotograma de un vídeo sale de su tiempo y de los fps estimados (el navegador no da los fps del archivo). En vídeos de fps variable el número puede saltar de dos en dos, pero ±1 siempre va al fotograma anterior o siguiente que se muestra.
 - La rotación de los metadatos la aplica el navegador. Comprobado en Chrome con un MP4 de 90°; en Firefox y Safari no se ha probado.
 - Vídeos con algún lado mayor que el límite de texturas de la GPU (normalmente 16384 px) se rechazan con un aviso.
 - Los proyectos y los `.glitch` guardan el fotograma actual, no el vídeo; la sesión del navegador sí conserva el vídeo.
 - **Exportar:** como máximo 3600 fotogramas por GIF/MP4 (aviso a partir de 1500). Exportar es lento a propósito, porque cada fotograma pasa por todo el pipeline, codificador incluido. El MP4 sin carpeta elegida se monta en memoria antes de descargarse (con carpeta va en streaming). El audio solo sale del primer vídeo visible y solo dentro de su duración. Safari y Firefox no se han probado.
+
+## Licencia
+
+[MIT](LICENSE). Las licencias de librerías, fuentes y servicios de terceros están en [THIRD-PARTY.md](THIRD-PARTY.md).
 
 ## Créditos
 
