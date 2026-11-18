@@ -65,19 +65,19 @@ PASS móvil: arrastrar en el mini chip crea un cable  ([{"a": "OD", "b": "HCLK",
 PASS móvil: la imagen cambia con el cable
 PASS móvil: imagen y mini chip a la vez en pantalla (sin scroll)
 PASS vídeos de prueba generados (WebM, GIF; MP4 si Chrome lo graba)  (anim.gif, clip-1080.mp4, clip-1080.webm, clip-720.mp4, clip-720.webm, rotado-90.mp4, roto.mp4)
-PASS importar WebM → capa de vídeo reproduciéndose (silenciada)  ({"kind": "video", "decoder": "video", "w": 1280, "h": 720, "duration": 2.977, "time": 0.427699, "frame": 0, "fps": 30, "stamp": 0, "playing": true, "speed": 1, "loop": true, "volume": 1, "muted": true, "hasAudio": true, "animate": true})
+PASS importar WebM → capa de vídeo reproduciéndose (silenciada)  ({"kind": "video", "decoder": "video", "w": 1280, "h": 720, "duration": 2.973, "time": 0.508433, "frame": 15, "fps": 30, "stamp": 2, "playing": true, "speed": 1, "loop": true, "volume": 1, "muted": true, "hasAudio": true, "animate": true})
 PASS vídeo con audio: controles de volumen activos
-PASS reproduciendo: el efecto se ve en movimiento  (diferencia entre fotogramas 103.2)
-PASS fps reales con vídeo 720p (render por fotograma nuevo)  (6.3 renders/s · 6.6 fotogramas nuevos/s)
+PASS reproduciendo: el efecto se ve en movimiento  (diferencia entre fotogramas 104.8)
+PASS fps reales con vídeo 720p (render por fotograma nuevo)  (7.0 renders/s · 7.3 fotogramas nuevos/s)
 PASS pausa → el fotograma queda quieto  (diff 0.000)
 PASS en pausa no se renderiza en bucle  (0 renders en 0,6 s)
-PASS en pausa, mover un knob cambia la imagen  (diff 105.5)
+PASS en pausa, mover un knob cambia la imagen  (diff 112.0)
 PASS barra de búsqueda → tiempo 1,5 s  (t=1.500)
 PASS tiempo actual / total en la barra  (0:01.5 / 0:02.9)
-PASS avanzar 1 fotograma y retroceder 1 vuelve al mismo  (22 → 23 → 22)
-PASS atajo . avanza un fotograma (imagen distinta)  (22 → 23)
-PASS atajo , retrocede un fotograma  (23 → 22)
-PASS mismo fotograma + misma seed + mismo estado = píxeles idénticos  (4a11bc33ba5f517e 4a11bc33ba5f517e 4a11bc33ba5f517e)
+PASS avanzar 1 fotograma y retroceder 1 vuelve al mismo  (15 → 16 → 15)
+PASS atajo . avanza un fotograma (imagen distinta)  (15 → 16)
+PASS atajo , retrocede un fotograma  (16 → 15)
+PASS mismo fotograma + misma seed + mismo estado = píxeles idénticos  (c3d09a68b84242d7 c3d09a68b84242d7 c3d09a68b84242d7)
 PASS interruptor «Glitch animado» cambia el ruido del fotograma  (animate=False)
 PASS Glitch animado de nuevo → mismo resultado que antes (determinista)
 PASS velocidad 0,25× y 2×  (0.25 / 2)
@@ -87,19 +87,19 @@ PASS botón silencio
 PASS atajo M quita el silencio
 PASS Espacio = play/pausa con vídeo
 PASS controles de vídeo con aria-label
-PASS JPEG/pixel sort: aviso «solo en pausa» mientras se reproduce  (6.4 fps con la etapa activa)
+PASS JPEG/pixel sort: aviso «solo en pausa» mientras se reproduce  (7.5 fps con la etapa activa)
 PASS en pausa el aviso desaparece y el codificador es determinista
 PASS Capturar guarda el fotograma actual a resolución completa  ({"w": 1280, "h": 720, "media": false, "layerW": 1280, "layerH": 720})
-PASS exportar PNG con vídeo = resolución completa  ({"w": 1280, "h": 720, "bytes": 29746, "original": [1280, 720]})
+PASS exportar PNG con vídeo = resolución completa  ({"w": 1280, "h": 720, "bytes": 31292, "original": [1280, 720]})
 PASS cambiar de vídeo a imagen libera el reproductor
-PASS deshacer devuelve la capa de vídeo (reproductor reabierto)  ({"kind": "video", "decoder": "video", "w": 1280, "h": 720, "duration": 2.977, "time": 0, "frame": 0, "fps": 30, "stamp": 0, "playing": false, "speed": 1, "loop": true, "volume": 1, "muted": true, "hasAudio": true, "animate": true})
+PASS deshacer devuelve la capa de vídeo (reproductor reabierto)  ({"kind": "video", "decoder": "video", "w": 1280, "h": 720, "duration": 2.973, "time": 0, "frame": 0, "fps": 30, "stamp": 0, "playing": false, "speed": 1, "loop": true, "volume": 1, "muted": true, "hasAudio": true, "animate": true})
 PASS vídeo + GIF en el mismo documento
-PASS fps reales con vídeo 1080p  (6.7 renders/s · 7.0 fotogramas nuevos/s (clip-1080.mp4))
-PASS importar MP4 (H.264)  ({"kind": "video", "decoder": "video", "w": 1280, "h": 720, "duration": 3.023067, "time": 0.409228, "frame": 11, "fps": 30, "stamp": 1, "playing": true, "speed": 1, "loop": true, "volume": 1, "muted": true, "hasAudio": true, "animate": true})
+PASS fps reales con vídeo 1080p  (6.3 renders/s · 6.6 fotogramas nuevos/s (clip-1080.mp4))
+PASS importar MP4 (H.264)  ({"kind": "video", "decoder": "video", "w": 1280, "h": 720, "duration": 3.028, "time": 0.38675, "frame": 11, "fps": 30, "stamp": 2, "playing": true, "speed": 1, "loop": true, "volume": 1, "muted": true, "hasAudio": true, "animate": true})
 PASS MP4 con rotación 90° en metadatos → se ve en vertical (720×1280)  ({"w": 720, "h": 1280})
 PASS vídeo rotado: lienzo y capa también en vertical (sin aplastar)  ([720, 1280, 720, 1280])
 PASS vídeo rotado: Capturar da 720×1280  ({"w": 720, "h": 1280, "media": false, "layerW": 720, "layerH": 1280})
-PASS GIF animado con ImageDecoder: 48 fotogramas a 25 fps, en movimiento  ({"decoder": "ImageDecoder", "dur": 1.92, "fps": 25} diff 96.8)
+PASS GIF animado con ImageDecoder: 48 fotogramas a 25 fps, en movimiento  ({"decoder": "ImageDecoder", "dur": 1.92, "fps": 25} diff 93.8)
 PASS GIF (ImageDecoder): avanzar fotograma
 PASS GIF sin audio: volumen desactivado
 PASS GIF animado con omggif: 48 fotogramas a 25 fps, en movimiento  ({"decoder": "omggif", "dur": 1.92, "fps": 25} diff 95.1)
@@ -125,22 +125,40 @@ PASS GIF generado: cabecera, NETSCAPE2.0 infinito, 20 fotogramas × 5 cs, 320×2
 PASS GIF generado: bucle perfecto (último → primero como un paso normal)  (costura 68.0 · paso mediano 73.0 · máximo 92.8)
 PASS MP4 generado: H.264, 640×480, 30 fotogramas a 30 fps, 1 s, sin audio  ({"format": "MP4", "codec": "avc", "w": 640, "h": 480, "duration": 1, "fps": 30, "frames": 30, "audio": null})
 PASS GIF de vídeo, fundido cruzado: 30 fotogramas (2 s − 25 % de solape), 320×180  ({"frames": 30, "w": 320, "h": 180, "loop": 0})
-PASS fundido cruzado: costura comparable al paso normal  (costura 92.7 · mediana 95.6 · máx 116.3)
-PASS GIF ida y vuelta: 2·20−2 = 38 fotogramas, costura normal  (38 fotogramas · costura 101.8 · mediana 98.7)
+PASS fundido cruzado: costura comparable al paso normal  (costura 92.8 · mediana 95.9 · máx 117.4)
+PASS GIF ida y vuelta: 2·20−2 = 38 fotogramas, costura normal  (38 fotogramas · costura 101.6 · mediana 98.9)
 PASS GIF recortado al bucle: ≤ 50 fotogramas, retardo 4 cs exacto  (25 fotogramas)
 PASS 30 fps en GIF: aviso de redondeo y retardos 3/4 cs con media exacta  (retardos [3, 4] media 3.35)
 PASS MP4 de vídeo: H.264 640×360, 15 fps, rango 0,5–2 s (1,5 s), audio AAC  ({"format": "MP4", "codec": "avc", "w": 640, "h": 360, "duration": 1.5333333333333334, "fps": 15, "frames": 23, "audio": "aac"} · Se incluye el audio del vídeo (AAC).)
 PASS el MP4 exportado se reproduce en un <video>
-PASS exportación determinista: dos GIF iguales byte a byte  (37508 / 37508 bytes)
-PASS carpeta elegida: el archivo se escribe ahí con el nombre de la plantilla  ([["clip-720-1337-20261118.mp4", 158546]])
+PASS exportación determinista: dos GIF iguales byte a byte  (36926 / 36926 bytes)
+PASS carpeta elegida: el archivo se escribe ahí con el nombre de la plantilla  ([["clip-720-1337-20261118.mp4", 156011]])
 PASS MP4: cancelar a mitad no deja archivo a medias (interfaz viva durante la exportación)  (['clip-720-1337-20261118.mp4'] · Exportación cancelada: no se ha guardado nada · bucle de eventos 0 ms)
 PASS GIF: cancelar a mitad no deja archivo a medias (interfaz viva durante la exportación)  (['clip-720-1337-20261118.mp4'] · Exportación cancelada: no se ha guardado nada · bucle de eventos 0 ms)
 PASS móvil: la lista cabe en pantalla y sus filas miden ≥ 44 px  (x=6 w=296 fila 46px)
 PASS móvil: el diálogo ocupa toda la pantalla, sin scroll horizontal  (390×844)
-FAIL exportar: sin errores en consola  (console.error: An AudioSample was garbage collected without first being closed. For proper resource management, make sure to call close() on all your AudioSamples as soon as you're done using them.)
+PASS exportar: sin errores en consola
 PASS exportar: cero peticiones de red externas
+PASS buscador: cero peticiones externas al cargar la app  ([])
+PASS botón «Buscar GIF» junto a Importar, cabe a 390 px  (x=195 scrollWidth=390)
+PASS abrir el panel no hace ninguna petición
+PASS debounce: ninguna petición mientras se escribe
+PASS debounce ~400 ms: una sola petición para «computer»  (["https://gifcities.archive.org/api/v1/gifsearch?q=computer&limit=300"])
+PASS resultados: 48 miniaturas y estado con el total  (48 · 48 de 150 resultados para «computer». Toca uno para usarlo.)
+PASS cada resultado: enlace a la Wayback Machine (noopener) y crédito GifCities · Internet Archive  ({"label": "Usar GIF: mazuki2873 images m azuki new animation", "href": "https://web.archive.org/web/20091026213653/http://www.geocities.com/mazuki2873/computer/index.htm", "rel": "noopener noreferrer", "target": "_blank", "credit": "Fuente: GifCities · Internet Archive"})
+PASS «Cargar más» añade 48
+PASS «Cargar más» otra vez: 144 de 150  (144)
+PASS miniaturas sin Referer (privacidad)  (33 miniaturas)
+PASS solo dominios esperados  ({'blob.gifcities.org', 'gifcities.archive.org'})
+PASS estado «sin resultados»  (Sin resultados para «zzzz». Prueba otra palabra (en inglés suele haber más).)
+PASS estado «error de red» con Reintentar y respaldo manual  (GifCities respondió 503. Puedes reintentar o usar «Abrir gifcities.org». Reintentar)
+PASS estado «sin conexión»  (Sin conexión: la búsqueda necesita internet. Reintentar)
+PASS datos remotos nunca como HTML (sin ejecutar, texto literal, enlaces javascript: descartados)  (pwned=None links=0)
+PASS descarga con indicador y Cancelar: no se añade nada  (Descarga cancelada)
+PASS tocar un GIF lo descarga y lo carga como capa animada  ({"kind": "gif", "w": 64, "h": 48})
+PASS buscador: sin errores en consola (aparte del 503 simulado a propósito)
 PASS ninguna petición de red externa tras la carga
 PASS ninguna petición de red tras la carga (salvo recargas de prueba)  (12 peticiones locales (recargas del test))
 PASS sin errores en consola
 
-143/144 OK
+162/162 OK
