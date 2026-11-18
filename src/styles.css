@@ -138,7 +138,7 @@ svg { display: block; }
 .hw-btn:disabled { opacity: 0.4; cursor: default; transform: none; }
 .hw-btn:focus-visible, .knob-dial:focus-visible, .pin:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .hw-btn.icon { width: 46px; height: 40px; padding: 0; display: grid; place-items: center; }
-.hw-btn.icon, .chip-btn { color: var(--ink); }
+.hw-btn.icon { color: var(--ink); }
 .hw-btn.accent { background: linear-gradient(#ff7a4a, var(--accent-dk)); color: #fff; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25); }
 .hw-btn-sm { padding: 5px 10px; font-size: 12px; box-shadow: 0 2px 0 var(--edge), inset 0 1px 0 var(--hl); }
 
@@ -289,10 +289,6 @@ svg { display: block; }
   .rw-mname, .rw-mval { line-height: 16px; }
 }
 .rw-range { grid-area: range; width: 100%; min-width: 0; height: 22px; margin: 0; accent-color: var(--c, var(--accent)); cursor: pointer; touch-action: pan-y; }
-.chip-btn { width: 46px; height: 46px; padding: 0; display: grid; place-items: center; }
-.pair-btn {
-  min-width: 132px; height: 66px; text-align: left; display: flex; flex-direction: column; justify-content: center; gap: 2px;
-}
 .pair-label { font: 700 15px var(--mono); display: flex; gap: 6px; flex-wrap: wrap; }
 .pair-label i { color: var(--ink-soft); font-style: normal; }
 .pair-off { color: var(--ink-soft); }
@@ -565,7 +561,6 @@ svg { display: block; }
 .rack-tools .hw-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .rack-tools .hw-btn small { font: 800 11px var(--mono); letter-spacing: 0.06em; }
 .capture-btn .ico { width: 30px; height: 30px; }
-.chip-btn .ico { width: 24px; height: 24px; }
 .view-hud button { display: inline-grid; place-items: center; }
 .view-hud .ico { width: 16px; height: 16px; color: #eee; }
 .viewer-cta { display: inline-flex; align-items: center; gap: 8px; }
