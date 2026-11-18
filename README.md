@@ -10,7 +10,7 @@ Inspirado en [Glitchy Camera](https://glitchycam.com), llevado a la edición de 
 |---|---|---|
 | ![Mini chip](docs/screenshots/13-mini-chip-cable.png) | ![Vista ampliada](docs/screenshots/14-vista-ampliada-mismo-cable.png) | ![Móvil](docs/screenshots/15-movil-mini-chip.png) |
 
-**Pruébalo en el navegador:** https://verdux0.github.io/glitch-editor/ (GitHub Pages; ver [Usarlo en el teléfono](#usarlo-en-el-teléfono)).
+**Pruébalo en el navegador:** https://verdux0.github.io/glitch-editor/ (GitHub Pages; ver [Usarlo en el teléfono](#usarlo-en-el-teléfono)). Para publicarlo en otro sitio (Cloudflare Pages, Netlify Drop o GitHub Pages), ver [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md).
 
 ## Arrancar
 
@@ -295,6 +295,14 @@ npm run dev:phone
 **3. Un único archivo.** `npm run build:single` genera `dist-single/index.html`, con todo dentro. En el ordenador se abre con doble clic. Abrir archivos locales en el móvil depende del sistema y del navegador (**sin comprobar**); es más fiable usar la opción 1 o la 2.
 
 **En el móvil:** importar desde la galería o la cámara (selector de archivos), pellizcar con dos dedos para hacer zoom, arrastrar capas, mini chip táctil, vídeos con reproducción en línea (empiezan silenciados), buscador de GIF y exportar. En el móvil no se puede elegir carpeta: los archivos van a las descargas del navegador. Si se puede exportar MP4 depende del codificador del teléfono; si no lo hay, la opción sale desactivada con el motivo. Todo esto está **sin comprobar en un dispositivo real**: solo se ha probado con la emulación móvil de Chrome. La app no es instalable como PWA (no tiene manifiesto ni service worker).
+
+## Desplegar
+
+`npm run build` genera `dist/`, una web estática que funciona en la raíz de un dominio o en una subruta (`base: './'`; comprobado con `python tools/verify_paths.py`). La guía paso a paso de los tres métodos, con fuentes y límites, está en **[docs/DESPLIEGUE.md](docs/DESPLIEGUE.md)**:
+
+- **Cloudflare Pages** conectado a GitHub (`wrangler.toml` y `public/_headers` ya incluidos): se publica en cada push.
+- **Netlify Drop:** arrastrar `dist` a app.netlify.com/drop, sin conectar nada.
+- **GitHub Pages:** el workflow `.github/workflows/pages.yml`, ya configurado. Falta activar Pages en el repositorio.
 
 ## Verificación
 
