@@ -20,3 +20,6 @@ certs/
 __pycache__/
 .DS_Store
 Thumbs.db
+
+# derived data / downloads of the font tools (never committed)
+tools/fonts/.cache/
