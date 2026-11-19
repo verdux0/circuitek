@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from verify_media import run as run_media
 from verify_export import run as run_export
 from verify_gifsearch import run as run_gifsearch
+from verify_fonts import run as run_fonts
 from verify_anim import run as run_anim, run_motion
 
 URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:4173/"
@@ -412,6 +413,7 @@ async def main():
         await run_export(browser, URL, OUT, check, Path(tempfile.gettempdir()) / "ge-media")
         # ---- GIF search (network intercepted: nothing reaches the Internet Archive) ----
         await run_gifsearch(browser, URL, OUT, check)
+        await run_fonts(browser, URL, OUT, check)
         # ---- animated still image: ▶/■, preview frame N == exported frame N ----
         await run_anim(browser, URL, OUT, check)
         # ---- «Movimiento»: Deriva suave / Saltos, knobs that move, GIF loop ----

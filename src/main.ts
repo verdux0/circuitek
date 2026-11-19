@@ -9,12 +9,14 @@ import { Knob } from './ui/knob';
 import { CABLE_COLORS, RewirePanel } from './ui/rewire';
 import { StagesPanel } from './ui/stages';
 import { makeSampleImage } from './sample';
-import { Session } from './session';
+import { SESSION_VERSION, Session } from './session';
 import { clampSize, cloneDoc, cloneLayer, emptyDoc, fxTargetId, layerAnimates, sanitizeDoc, flipLayer, getLayer, makeLayer, newId, pasteLayer, rotateLayer, textLayerName, type BitmapSource, type DocState, type Layer } from './doc';
-import { ProjectStore, parseProjectFile, type ProjectMeta, type ProjectRecord } from './projects';
+import { PROJECT_VERSION, ProjectStore, parseProjectFile, type ProjectMeta, type ProjectRecord } from './projects';
 import { ContextMenu, type MenuEntry } from './ui/contextmenu';
 import { ico } from './ui/icons';
-import { DEFAULT_TEXT, ensureFont, loadFontFile, measureText, queryLocalFamilies, rasterText, rasterTextAt, type TextProps } from './text';
+import { BUNDLED_FONTS, DEFAULT_TEXT, SYSTEM_FONTS, cssFont, ensureFont, loadFontFile, measureText, queryLocalFamilies, rasterText, rasterTextAt, textWeight, type TextProps } from './text';
+import { catalogLoaded, findEntry, loadCatalog, loadVariant, missingChars, pickVariant, setBundledFamilies, variantChoices, type FontEntry } from './fontlib';
+import { FontPicker, type PickItem } from './ui/fontpicker';
 import type { SourceProvider } from './gl/renderer';
 import { TextEditor } from './ui/textedit';
 import { Viewport } from './ui/viewport';
@@ -51,7 +53,7 @@ const blobSources = new Map<string, Blob | (() => Promise<Blob>)>();
 const history = new History<DocState>();
 /** Saves the editing session in IndexedDB so a reload keeps everything. */
 const session = new Session(
-  () => ({ v: 1, doc, shots: legacyShots, fonts: fonts.files, project }),
+  () => ({ v: SESSION_VERSION, doc, shots: legacyShots, fonts: fonts.files, project }),
   (k) => blobSources.get(k),
 );
 /** Saved projects (own IndexedDB database). */
@@ -197,7 +199,7 @@ function sourceOf(l: Layer, pxScale: number): ReturnType<SourceProvider['source'
     if (l.text) {
       const t = l.text;
       const k = Math.min(2 ** Math.ceil(Math.log2(Math.max(pxScale, 1 / 16))), 4096 / Math.max(l.w, l.h));
-      return { key: `${l.src}@${k}`, w: Math.max(1, Math.round(l.w * k)), h: Math.max(1, Math.round(l.h * k)), load: () => rasterTextAt(t, l.w, l.h, k) };
+      return { key: `${l.src}@${k}#${fontEpoch}`, w: Math.max(1, Math.round(l.w * k)), h: Math.max(1, Math.round(l.h * k)), load: () => rasterTextAt(t, l.w, l.h, k) };
     }
     if (l.media) {
       // Live frame straight from the player (the poster bitmap below covers the reopen gap).
@@ -344,12 +346,119 @@ const layersPanel = new LayersPanel({
   fontsVersion: () => fonts.version,
   loadLocalFonts: () => void loadLocalFonts(),
   pickFontFile: () => fontFileInput.click(),
+  openFontPicker: () => void fontPicker.open(),
+  fontVariants: (t) => fontVariants(t),
+  fontNote: (t) => fontNote(t),
   rowMenu: (id, x, y) => openRowMenu(id, x, y),
 });
 $('layers').append(layersPanel.el);
 
 /* ---- text layers ---- */
 const fonts = { local: [] as string[], files: [] as string[], version: 0 };
+
+/* ---- font library (public/fonts): loading, variants, missing fonts and glyphs ---- */
+setBundledFamilies(BUNDLED_FONTS);
+/** Bumped when a font finishes loading late, so the GPU re-rasterizes text (the key is not in the doc). */
+let fontEpoch = 0;
+/** fontId (or family) of fonts that could not be found / loaded: shown under the font. */
+const missingFonts = new Set<string>();
+/** Characters of each text layer that its font does not cover. */
+const glyphGaps = new Map<string, string>();
+const warned = new Set<string>();
+function warnOnce(key: string, msg: string): void {
+  if (warned.has(key)) return;
+  warned.add(key);
+  console.warn(`[fuentes] ${msg}`);
+  toast(msg);
+}
+const WEIGHT_NAMES: Record<number, string> = { 100: 'Fina', 200: 'Extraligera', 300: 'Ligera', 400: 'Normal', 500: 'Media', 600: 'Seminegrita', 700: 'Negrita', 800: 'Extranegrita', 900: 'Black' };
+const GENERIC_FONTS = ['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui'];
+const isLibId = (id?: string): boolean => !!id && !id.includes(':');
+/** Fonts usable without the catalog (bundled, system, computer, user files, CSS generics). */
+function knownOutsideCatalog(f: string): boolean {
+  return BUNDLED_FONTS.includes(f) || SYSTEM_FONTS.includes(f) || fonts.local.includes(f) || fonts.files.includes(f) || GENERIC_FONTS.includes(f);
+}
+function entryOf(t: TextProps): FontEntry | null {
+  return catalogLoaded() ? findEntry(isLibId(t.fontId) ? t.fontId : undefined, t.font) : null;
+}
+/** Catalog entry of a text's font; loads the catalog only when the text needs it. */
+async function libraryEntry(t: TextProps): Promise<FontEntry | null> {
+  const needs = isLibId(t.fontId) || (!t.fontId && !knownOutsideCatalog(t.font));
+  if (needs && !(await loadCatalog())) return null;
+  return entryOf(t);
+}
+/**
+ * Loads the font a text needs before it is measured or rasterized: the exact library variant
+ * (only the files its characters need) or a browser / system / user font. Problems are shown
+ * (toast + note under the font), never swallowed, and the layer keeps its fontId.
+ */
+async function loadTextFont(t: TextProps, layerId?: string): Promise<void> {
+  const key = t.fontId ?? t.font;
+  const e = await libraryEntry(t);
+  if (e) {
+    const ok = await loadVariant(e, textWeight(t), t.italic, t.content.slice(0, 200) || 'A');
+    if (ok) missingFonts.delete(key);
+    else {
+      missingFonts.add(key);
+      warnOnce(`load:${key}`, `No se pudo cargar «${e.family}»: se dibuja con una fuente alternativa. Elígela otra vez para reintentar.`);
+      warned.delete(`load:${key}`);
+    }
+    const gaps = missingChars(t.content, e.subsets, catalogLoaded()?.unicodeRanges ?? null).join('');
+    if (layerId) {
+      if (gaps) glyphGaps.set(layerId, gaps);
+      else glyphGaps.delete(layerId);
+    }
+    if (gaps) warnOnce(`gaps:${key}:${gaps}`, `«${e.family}» no tiene ${gaps.slice(0, 12)}: esos caracteres se dibujan con otra fuente.`);
+    return;
+  }
+  if (layerId) glyphGaps.delete(layerId);
+  const lost = isLibId(t.fontId) || (t.fontId?.startsWith('user:') && !fonts.files.includes(t.font)) || (!t.fontId && !knownOutsideCatalog(t.font) && !catalogLoaded());
+  if (lost) {
+    missingFonts.add(key);
+    warnOnce(`miss:${key}`, `La fuente «${t.font}» no está disponible aquí: se usa una alternativa temporal y se conserva tu elección.`);
+  } else missingFonts.delete(key);
+  await ensureFont(t, t.content.slice(0, 40) || 'AaÑñ');
+}
+function fontVariants(t: TextProps): { value: string; label: string }[] | null {
+  const e = entryOf(t);
+  if (!e) return null;
+  return variantChoices(e).map((c) => ({ value: `${c.weight}${c.italic ? 'i' : ''}`, label: `${WEIGHT_NAMES[c.weight] ?? c.weight} ${c.weight}${c.italic ? ' · cursiva' : ''}` }));
+}
+function fontNote(t: TextProps): string {
+  if (missingFonts.has(t.fontId ?? t.font)) return `«${t.font}» no está disponible: se muestra una alternativa (tu elección se conserva).`;
+  const gaps = doc.active ? glyphGaps.get(doc.active) : undefined;
+  return gaps ? `Faltan en esta fuente: ${gaps.slice(0, 16)} (se dibujan con otra). Prueba otra fuente.` : '';
+}
+/** A font arrived after the text was drawn: re-measure and re-rasterize the layers that use it. */
+function refreshFontLayers(t: TextProps): void {
+  fontEpoch++;
+  for (const l of doc.layers) {
+    if (!l.text || l.text.font !== t.font) continue;
+    bitmaps.delete(l.src);
+    refreshText(l);
+  }
+  afterChange(false, true);
+}
+const fontPicker = new FontPicker({
+  extra: () => ({ system: [...BUNDLED_FONTS, ...SYSTEM_FONTS], local: fonts.local, user: fonts.files }),
+  previewText: () => getLayer(doc, doc.active)?.text?.content ?? '',
+  current: () => {
+    const t = getLayer(doc, doc.active)?.text;
+    return t ? { fontId: t.fontId, family: t.font } : null;
+  },
+  apply: (it: PickItem) => {
+    const l = getLayer(doc, doc.active);
+    if (!l?.text) return;
+    const patch: Partial<TextProps> = { font: it.family, fontId: it.key, weight: undefined };
+    if (it.entry) {
+      // Keep the weight / style as close as this family allows.
+      const p = pickVariant(it.entry, textWeight(l.text), l.text.italic);
+      if (p) Object.assign(patch, { italic: p.italic, bold: p.weight >= 600, weight: p.weight === 400 || p.weight === 700 ? undefined : p.weight });
+    }
+    void editText(l.id, patch, 'once');
+  },
+});
+document.body.append(fontPicker.el);
 
 /** Re-measures a text layer (its box follows the text, the center stays) and refreshes its UI raster. */
 function refreshText(l: Layer): void {
@@ -370,13 +479,24 @@ function refreshText(l: Layer): void {
 async function editText(id: string, patch: Partial<TextProps>, phase: Phase): Promise<void> {
   const l = getLayer(doc, id);
   if (!l?.text) return;
-  if ('font' in patch || 'bold' in patch || 'italic' in patch) await ensureFont({ ...l.text, ...patch });
+  // The bold toggle drops an exact variant weight (700 / 400 again).
+  if ('bold' in patch && !('weight' in patch)) patch = { ...patch, weight: undefined };
+  const next: TextProps = { ...l.text, ...patch };
+  if (next.weight === undefined) delete next.weight;
+  if (next.fontId === undefined) delete next.fontId;
+  const fontChange = 'font' in patch || 'fontId' in patch || 'bold' in patch || 'italic' in patch || 'weight' in patch;
+  if (fontChange) await loadTextFont(next, id);
   editDoc((d) => {
     const x = getLayer(d, id);
     if (!x?.text) return;
-    x.text = { ...x.text, ...patch };
+    x.text = { ...next };
     refreshText(x);
   }, phase);
+  if (fontChange || !('content' in patch)) return;
+  // Typing applies at once (no await keeps keystrokes in order). If new characters need a
+  // subset that is not loaded yet, the text is re-rasterized when it arrives.
+  if (!document.fonts.check(cssFont({ ...next, size: 32 }), next.content || 'A')) void loadTextFont(next, id).then(() => refreshFontLayers(next));
+  else if (catalogLoaded()) void loadTextFont(next, id).then(() => layersPanel.sync());
 }
 
 /** T: new text layer in the middle of what you are looking at, ready to type. */
@@ -384,7 +504,7 @@ async function addTextLayer(): Promise<void> {
   const first = doc.layers.length === 0;
   const base = first ? emptyDoc() : doc;
   const t: TextProps = { ...DEFAULT_TEXT, size: Math.max(16, Math.round(Math.min(base.w, base.h) * 0.14)) };
-  await ensureFont(t);
+  await loadTextFont(t);
   let id = '';
   editDoc((d) => {
     if (first) Object.assign(d, emptyDoc(), { bg: d.bg });
@@ -457,15 +577,18 @@ fontFileInput.addEventListener('change', async () => {
   try {
     const family = await loadFontFile(f);
     if (!fonts.files.includes(family)) fonts.files.push(family);
+    missingFonts.delete(`user:${family}`);
     fontBlobs.set(family, f);
     session.addFont(family, f);
     fonts.version++;
     const l = getLayer(doc, doc.active);
-    if (l?.text) await editText(l.id, { font: family }, 'once');
+    if (l?.text) await editText(l.id, { font: family, fontId: `user:${family}`, weight: undefined }, 'once');
     else layersPanel.sync();
-    toast(`Fuente «${family}» cargada`);
-  } catch {
-    toast('No se pudo leer ese archivo de fuente');
+    toast(`Fuente propia «${family}» cargada: se guarda solo en este equipo y no entra en los presets. Tú respondes de su licencia.`);
+  } catch (err) {
+    const m = err instanceof Error && err.message.startsWith('el archivo') ? err.message : 'está dañado o no es una fuente';
+    console.warn('[fuentes] archivo de fuente rechazado:', err);
+    toast(`No se pudo usar ese archivo de fuente: ${m}`);
   }
 });
 
@@ -886,7 +1009,7 @@ async function saveProject(asNew: boolean): Promise<void> {
   const now = Date.now();
   const existing = !asNew && project ? await projects.get(project.id) : null;
   const rec: ProjectRecord = {
-    v: 1,
+    v: PROJECT_VERSION,
     id: existing?.id ?? newId('P'),
     name: existing?.name ?? (asNew && project ? `${project.name} (2)`.slice(0, 80) : defaultProjectName()),
     created: existing?.created ?? now,
@@ -1867,7 +1990,7 @@ async function hydrate(d: DocState, blobFor: (key: string) => Promise<Blob | und
   let missing = 0;
   for (const l of d.layers) {
     if (l.text) {
-      await ensureFont(l.text);
+      await loadTextFont(l.text, l.id);
       refreshText(l);
       out.push(l);
       continue;
@@ -1927,7 +2050,7 @@ async function migrateShots(raw: unknown, blobs: Map<string, Blob>): Promise<voi
     const d = sanitizeDoc(sh?.doc);
     if (!d.layers.length) continue;
     const now = Date.now() + n;
-    const rec: ProjectRecord = { v: 1, id: newId('P'), name: `Captura ${++n}`, created: now, updated: now, thumb, layers: d.layers.length, doc: d, fonts: docFonts(d) };
+    const rec: ProjectRecord = { v: PROJECT_VERSION, id: newId('P'), name: `Captura ${++n}`, created: now, updated: now, thumb, layers: d.layers.length, doc: d, fonts: docFonts(d) };
     try {
       await projects.save(rec, (k) => blobs.get(k), (f) => fontBlobs.get(f));
     } catch {
@@ -2089,6 +2212,14 @@ Object.assign(window, {
     },
     addSampleLayer: async (w?: number, h?: number) => (await addImageLayer(await makeSampleImage(w, h), 'Muestra')).id,
     getDoc: () => cloneDoc(doc),
+    addText: () => addTextLayer(),
+    /** Opens a stored document as the app would (sanitize + load fonts / bitmaps). */
+    openDoc: async (o: unknown) => replaceDoc((await hydrate(sanitizeDoc(o), () => undefined)).doc),
+    fontPickerMs: () => fontPicker.lastOpenMs,
+    fontNote: () => {
+      const t = getLayer(doc, doc.active)?.text;
+      return t ? fontNote(t) : '';
+    },
     editText: (id: string, patch: Partial<TextProps>) => editText(id, patch, 'once'),
     setDoc: (d: DocState) => editDoc((x) => Object.assign(x, cloneDoc(d)), 'once'),
     view: () => ({ zoom: viewport.zoom, x: viewport.stage.x(), y: viewport.stage.y(), preview: [engine.previewW, engine.previewH] }),

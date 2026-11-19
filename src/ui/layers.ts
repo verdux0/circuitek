@@ -22,7 +22,7 @@ import {
   type DocState,
   type Layer,
 } from '../doc';
-import { BUNDLED_FONTS, SYSTEM_FONTS, type TextProps } from '../text';
+import type { TextProps } from '../text';
 import { addIco, ico } from './icons';
 import { layerHasFx } from '../gl/renderer';
 
@@ -37,6 +37,12 @@ export interface LayersHost {
   toast(msg: string): void;
   /** Text layers. */
   editText(id: string, patch: Partial<TextProps>, phase: Phase): void;
+  /** Opens the font picker for the active text layer. */
+  openFontPicker(): void;
+  /** Weight / style choices of the layer's font ("400", "700i"…); null when it has no known variants. */
+  fontVariants(t: TextProps): { value: string; label: string }[] | null;
+  /** Warning shown under the font (missing font, missing glyphs…), '' when all is fine. */
+  fontNote(t: TextProps): string;
   openTextEditor(id: string): void;
   addTextLayer(): void;
   extraFonts(): { local: string[]; files: string[] };
@@ -191,6 +197,7 @@ export class LayersPanel {
   private textButton(b: HTMLElement): void {
     const l = this.active();
     if (!l?.text) return;
+    if (b.dataset.font === 'pick') return this.host.openFontPicker();
     if (b.dataset.font === 'local') return this.host.loadLocalFonts();
     if (b.dataset.font === 'file') return this.host.pickFontFile();
     if (b.dataset.textToggle === 'bold') return this.host.editText(l.id, { bold: !l.text.bold }, 'once');
@@ -323,8 +330,9 @@ export class LayersPanel {
     if (textKey) {
       const l = this.active();
       if (!l?.text) return;
-      if (textKey === 'font') {
-        if (phase === 'end') this.host.editText(l.id, { font: t.value }, 'once');
+      if ((textKey as string) === 'variant') {
+        const m = /^(\d+)(i?)$/.exec(t.value);
+        if (m && phase === 'end') this.host.editText(l.id, { weight: Number(m[1]), italic: m[2] === 'i', bold: Number(m[1]) >= 600 }, 'once');
         return;
       }
       if (textKey === 'content' || textKey === 'color') return this.host.editText(l.id, { [textKey]: t.value }, phase);
@@ -448,20 +456,20 @@ export class LayersPanel {
   }
 
   private textBlock(t: TextProps): string {
-    const { local, files } = this.host.extraFonts();
-    const known = new Set([...BUNDLED_FONTS, ...SYSTEM_FONTS, ...local, ...files]);
-    const opts = (names: string[]) => names.map((n) => `<option value="${escapeHtml(n)}" style="font-family:'${escapeHtml(n)}'">${escapeHtml(n)}</option>`).join('');
-    const group = (label: string, names: string[]) => (names.length ? `<optgroup label="${label}">${opts(names)}</optgroup>` : '');
+    void t;
     return `
       <details class="sub text-props" data-sub="text" open>
         <summary>${ico('chevron', 'sub-chev')}${ico('type')} Texto</summary>
         <label class="prop"><span>TEXTO · doble clic en el visor para editar encima</span><textarea data-text="content" rows="2" spellcheck="false"></textarea></label>
         <div class="prop-row">
-          <label class="prop prop-wide"><span>FUENTE</span><select data-text="font">
-            ${known.has(t.font) ? '' : group('Actual', [t.font])}
-            ${group('Incluidas', BUNDLED_FONTS)}${group('Sistema', SYSTEM_FONTS)}${group('Del equipo', local)}${group('Archivos', files)}
-          </select></label>
+          <div class="prop prop-wide"><span id="font-lbl">FUENTE</span>
+            <button type="button" class="hw-btn font-pick" data-font="pick" aria-labelledby="font-lbl font-cur" aria-haspopup="dialog" title="Elegir fuente: buscar, filtrar por categoría y previsualizar">
+              <span id="font-cur" data-font-name></span>${ico('chevron')}</button></div>
         </div>
+        <div class="prop-row">
+          <label class="prop prop-wide"><span>VARIANTE</span><select data-text="variant" aria-label="Variante: peso y estilo"></select></label>
+        </div>
+        <p class="font-note" data-font-note role="status" aria-live="polite"></p>
         <div class="prop-row font-btns">
           <button class="hw-btn icon-sm" data-font="local" aria-label="Fuentes del equipo" title="Usar las fuentes instaladas en este equipo (Chrome / Edge; pide permiso)">${ico('font-local')}</button>
           <button class="hw-btn icon-sm" data-font="file" aria-label="Cargar archivo de fuente" title="Cargar un archivo .ttf, .otf, .woff o .woff2">${ico('font-file')}</button>
@@ -502,7 +510,28 @@ export class LayersPanel {
     if (l.text) {
       const t = l.text;
       set(q('[data-text="content"]'), t.content);
-      set(q('[data-text="font"]'), t.font);
+      const nm = q('[data-font-name]');
+      if (nm && nm.textContent !== t.font) {
+        nm.textContent = t.font;
+        nm.style.fontFamily = `"${t.font.replace(/["\\]/g, '')}", sans-serif`;
+      }
+      const vs = q<HTMLSelectElement>('[data-text="variant"]');
+      if (vs) {
+        const opts = this.host.fontVariants(t);
+        const sig = JSON.stringify(opts);
+        if (vs.dataset.sig !== sig) {
+          vs.dataset.sig = sig;
+          vs.innerHTML = (opts ?? []).map((o) => `<option value="${o.value}">${escapeHtml(o.label)}</option>`).join('');
+        }
+        vs.disabled = !opts || opts.length < 2;
+        (vs.closest('.prop-row') as HTMLElement).hidden = !opts;
+        const w = t.weight ?? (t.bold ? 700 : 400);
+        const want = `${w}${t.italic ? 'i' : ''}`;
+        if (opts?.some((o) => o.value === want)) set(vs, want);
+      }
+      const note = q('[data-font-note]');
+      const msg = this.host.fontNote(t);
+      if (note && note.textContent !== msg) note.textContent = msg;
       set(q('[data-text="size"]'), String(Math.round(t.size * 10) / 10));
       set(q('[data-text="lineHeight"]'), String(t.lineHeight));
       set(q('[data-text="color"]'), t.color);

@@ -13,8 +13,10 @@ export interface SavedShot {
   doc: DocState;
   thumb: string;
 }
+/** Session schema: 2 = text layers may carry fontId / weight (font library). 1 is still read. */
+export const SESSION_VERSION = 2;
 export interface SessionData {
-  v: 1;
+  v: 1 | 2;
   doc: DocState;
   shots: SavedShot[];
   /** Families loaded from font files (their bytes are stored under font:<family>). */
@@ -138,7 +140,7 @@ export class Session {
         }
       }
     }
-    if (!data || data.v !== 1 || !data.doc) return null;
+    if (!data || (data.v !== 1 && data.v !== 2) || !data.doc) return null;
     return { data, blobs, fonts };
   }
 

@@ -22,8 +22,10 @@ export interface ProjectMeta {
   thumb: string;
   layers: number;
 }
+/** Project schema: 2 = text layers may carry fontId / weight (font library); 1 opens as is. */
+export const PROJECT_VERSION = 2;
 export interface ProjectRecord extends ProjectMeta {
-  v: 1;
+  v: 1 | 2;
   doc: DocState;
   /** Families of font files the text layers use (bytes under font:<family>). */
   fonts: string[];
@@ -50,7 +52,7 @@ export function sanitizeRecord(x: unknown): ProjectRecord | null {
   const doc = sanitizeDoc(o.doc);
   const now = Date.now();
   return {
-    v: 1,
+    v: PROJECT_VERSION,
     id: o.id.slice(0, 64),
     name: typeof o.name === 'string' && o.name.trim() ? o.name.trim().slice(0, 80) : 'Proyecto',
     created: typeof o.created === 'number' ? o.created : now,
@@ -129,7 +131,7 @@ export class ProjectStore {
       await set(key, b, st);
       this.have.add(key);
     }
-    const out: ProjectRecord = { ...rec, v: 1, doc, layers: doc.layers.length };
+    const out: ProjectRecord = { ...rec, v: PROJECT_VERSION, doc, layers: doc.layers.length };
     await set(`p:${rec.id}`, out, st);
     // Read back: the save only counts if the record is really there.
     const back = (await get(`p:${rec.id}`, st)) as ProjectRecord | undefined;
@@ -193,7 +195,7 @@ export class ProjectStore {
       const b = await p.font(f);
       if (b) fonts[f] = await blobToDataUrl(b);
     }
-    const file = { format: PROJECT_FILE_FORMAT, v: 1, project: p.rec, images, fonts };
+    const file = { format: PROJECT_FILE_FORMAT, v: PROJECT_VERSION, project: p.rec, images, fonts };
     return new Blob([JSON.stringify(file)], { type: 'application/json' });
   }
 }

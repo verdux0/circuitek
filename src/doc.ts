@@ -387,6 +387,10 @@ export function sanitizeDoc(input: unknown): DocState {
         align: t.align === 'left' || t.align === 'right' ? t.align : 'center',
         lineHeight: num(t.lineHeight, DEFAULT_TEXT.lineHeight, 0.5, 4),
       };
+      // Text schema 2 (font library): fontId + exact weight. Older documents have neither and
+      // keep working by family name.
+      if (typeof t.fontId === 'string' && t.fontId && t.fontId.length <= 200 && !/[\u0000-\u001f]/.test(t.fontId)) l.text.fontId = t.fontId;
+      if (typeof t.weight === 'number' && Number.isFinite(t.weight)) l.text.weight = Math.round(Math.min(1000, Math.max(1, t.weight)));
     }
     d.layers.push(l);
   }

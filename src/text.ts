@@ -8,7 +8,15 @@ export type Align = 'left' | 'center' | 'right';
 
 export interface TextProps {
   content: string;
+  /** CSS family name (what Canvas draws with). */
   font: string;
+  /**
+   * Stable identity of the font: a library id (public/fonts catalog) or "system:" / "local:" /
+   * "user:" + family. Kept even when the font is missing so the choice is not lost.
+   */
+  fontId?: string;
+  /** Exact weight (100..900) chosen in the variant selector; when absent, `bold` gives 700 / 400. */
+  weight?: number;
   /** Font size in document pixels (before the layer scale). */
   size: number;
   color: string;
@@ -35,9 +43,14 @@ export const BUNDLED_FONTS = ['Anton', 'Bebas Neue', 'VT323', 'Press Start 2P', 
 export const SYSTEM_FONTS = ['Arial', 'Arial Black', 'Georgia', 'Times New Roman', 'Courier New', 'Verdana', 'Trebuchet MS', 'Impact', 'Comic Sans MS', 'Consolas'];
 const GENERIC = new Set(['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui']);
 
-export function cssFont(t: Pick<TextProps, 'font' | 'size' | 'bold' | 'italic'>, size = t.size): string {
+/** Weight used to draw: the variant's exact weight, or 700 / 400 from the bold toggle. */
+export function textWeight(t: Pick<TextProps, 'bold' | 'weight'>): number {
+  return t.weight ?? (t.bold ? 700 : 400);
+}
+
+export function cssFont(t: Pick<TextProps, 'font' | 'size' | 'bold' | 'italic' | 'weight'>, size = t.size): string {
   const fam = GENERIC.has(t.font) ? t.font : `"${t.font.replace(/"/g, '')}"`;
-  return `${t.italic ? 'italic ' : ''}${t.bold ? 700 : 400} ${size}px ${fam}, sans-serif`;
+  return `${t.italic ? 'italic ' : ''}${textWeight(t)} ${size}px ${fam}, sans-serif`;
 }
 
 export function textPadding(t: TextProps): number {
@@ -90,7 +103,7 @@ export function rasterTextAt(t: TextProps, w: number, h: number, k: number): Off
 }
 
 /** Waits until the font face used by `t` is ready (bundled fonts are lazy-loaded by the browser). */
-export async function ensureFont(t: Pick<TextProps, 'font' | 'bold' | 'italic'>, sample = 'AaÑñ'): Promise<void> {
+export async function ensureFont(t: Pick<TextProps, 'font' | 'bold' | 'italic' | 'weight'>, sample = 'AaÑñ'): Promise<void> {
   try {
     await document.fonts.load(cssFont({ ...t, size: 32 }), sample);
   } catch {
@@ -106,8 +119,15 @@ export async function queryLocalFamilies(): Promise<string[] | null> {
   return [...new Set(fonts.map((f) => f.family))].sort((a, b) => a.localeCompare(b));
 }
 
-/** Registers a .ttf / .otf / .woff / .woff2 file as a new family. Returns its name. */
+/** Largest user font file accepted (bytes). */
+export const MAX_USER_FONT = 15 * 1024 * 1024;
+
+/**
+ * Registers a .ttf / .otf / .woff / .woff2 file as a new family (the browser sanitizes it
+ * through FontFace). Returns its name.
+ */
 export async function loadFontFile(file: File): Promise<string> {
+  if (file.size > MAX_USER_FONT) throw new Error(`el archivo pesa más de ${MAX_USER_FONT / 1048576} MB`);
   const family = file.name.replace(/\.[^.]+$/, '').replace(/[^\w\- ]+/g, ' ').trim() || 'Fuente';
   const face = new FontFace(family, await file.arrayBuffer());
   await face.load();
