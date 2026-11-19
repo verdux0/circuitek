@@ -64,8 +64,18 @@ async def run(browser, url, out: Path, check):
     # ---- picker on the phone, from the real button ----
     await pg.tap("#btn-rack"); await settle(pg, 400)
     await pg.locator("#tab-layers").tap(); await settle(pg, 300)
+    trig = pg.locator(".fp-trigger")
+    await trig.wait_for(state="visible")
+    tb = await trig.bounding_box()
+    check("fuente como desplegable cerrado: una sola fila, sin pedir el catálogo",
+          await pg.locator(".fp-list").is_hidden() and tb["height"] <= 48 and await trig.get_attribute("aria-expanded") == "false"
+          and not [u for u in requests if "/fonts/" in u], f"{round(tb['height'])} px · «{(await trig.inner_text()).strip()}»")
+    await pg.screenshot(path=str(out / "64-fuentes-cerrado-movil.png"))
+    await trig.tap()
     lst = pg.locator(".fp-list")
     await lst.wait_for(state="visible")
+    check("al abrirlo: aria-expanded=true y foco en el buscador", await trig.get_attribute("aria-expanded") == "true"
+          and await pg.evaluate("document.activeElement.classList.contains('fp-q')"))
     await pg.wait_for_selector(".fp-row")
     await settle(pg, 700)
     open_ms = await pg.evaluate("window.__glitch.fontPickerMs()")
@@ -126,6 +136,16 @@ async def run(browser, url, out: Path, check):
     check("Mayús+Intro marca favorita; favoritas y recientes en localStorage", fid in (favs or "") and fid in (rec or ""), f"{target}: {favs} · {rec}")
     await pg.select_option(".fp-cat", "all")
     await settle(pg, 300)
+    await pg.locator(".fp-q").focus()
+    await pg.keyboard.press("Escape")
+    await settle(pg, 200)
+    check("Esc cierra el desplegable y devuelve el foco al campo", await pg.locator(".fp-list").is_hidden()
+          and await pg.evaluate("document.activeElement.classList.contains('fp-trigger')"))
+    before = await pg.evaluate("window.__glitch.getDoc().layers.find(x => x.text).text.font")
+    await pg.keyboard.press("ArrowDown")
+    await settle(pg, 1200)
+    after = await pg.evaluate("window.__glitch.getDoc().layers.find(x => x.text).text.font")
+    check("con el desplegable cerrado, ↓ pasa a la fuente siguiente (como un select)", after != before and await pg.locator(".fp-list").is_hidden(), f"{before} → {after}")
 
     # ---- variable font + variant selector ----
     await pg.evaluate("""(async () => { const d = window.__glitch.getDoc(); const l = d.layers.find(x => x.text);

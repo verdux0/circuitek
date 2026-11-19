@@ -69,6 +69,8 @@ const cssFamily = (f: string): string => `"${f.replace(/["\\]/g, '')}", sans-ser
 export class FontPicker {
   readonly el: HTMLElement;
   private input: HTMLInputElement;
+  private trigger: HTMLButtonElement;
+  private pop: HTMLElement;
   private catSel: HTMLSelectElement;
   private list: HTMLElement;
   private spacer: HTMLElement;
@@ -94,6 +96,11 @@ export class FontPicker {
     const el = document.createElement('div');
     el.className = 'fp';
     el.innerHTML = `
+      <button type="button" class="fp-trigger" aria-expanded="false" aria-controls="fp-pop"
+        aria-label="Fuente" title="Elegir fuente (↑ ↓ cambian a la anterior / siguiente sin abrir la lista)">
+        <span class="fp-cur-name"></span><span class="fp-chev" aria-hidden="true"></span>
+      </button>
+      <div class="fp-pop" id="fp-pop" hidden>
       <div class="fp-bar">
         <input type="search" class="fp-q" maxlength="60" autocomplete="off" spellcheck="false"
           role="combobox" aria-expanded="true" aria-controls="fp-list" aria-autocomplete="list"
@@ -101,8 +108,11 @@ export class FontPicker {
         <select class="fp-cat" aria-label="Filtrar fuentes por categoría"></select>
       </div>
       <div class="fp-list" id="fp-list" role="listbox" aria-label="Fuentes: clic o ↑ ↓ para aplicarlas" tabindex="0"><div class="fp-spacer"></div></div>
-      <p class="fp-status" role="status" aria-live="polite"></p>`;
+      <p class="fp-status" role="status" aria-live="polite"></p>
+      </div>`;
     this.el = el;
+    this.trigger = el.querySelector('.fp-trigger')!;
+    this.pop = el.querySelector('.fp-pop')!;
     this.input = el.querySelector('.fp-q')!;
     this.catSel = el.querySelector('.fp-cat')!;
     this.list = el.querySelector('.fp-list')!;
@@ -117,17 +127,43 @@ export class FontPicker {
     this.bind();
   }
 
-  /** Puts the list into the text panel (again after each rebuild of the panel). */
+  get expanded(): boolean {
+    return !this.pop.hidden;
+  }
+
+  /** Puts the control into the text panel (again after each rebuild of the panel). */
   async mount(slot: HTMLElement): Promise<void> {
     const scroll = this.list.scrollTop;
     slot.append(this.el);
     this.list.scrollTop = scroll;
-    // Nothing is fetched until the list is really on screen (the phone drawer may be closed).
-    if (!catalogLoaded()) {
-      this.status.textContent = 'Cargando fuentes…';
-      await this.whenVisible();
-      if (!this.el.isConnected) return;
+    this.markCurrent();
+    if (this.expanded) {
+      await this.ensureBuilt();
+      this.markCurrent(true);
     }
+  }
+
+  /** Opens the list under the field (nothing is fetched before this). */
+  async expand(focusSearch = true): Promise<void> {
+    this.pop.hidden = false;
+    this.trigger.setAttribute('aria-expanded', 'true');
+    this.el.classList.add('open');
+    if (focusSearch) this.input.focus();
+    await this.ensureBuilt();
+    this.markCurrent(true);
+  }
+
+  collapse(focusTrigger = true): void {
+    if (this.commitTimer) this.commit();
+    this.pop.hidden = true;
+    this.trigger.setAttribute('aria-expanded', 'false');
+    this.el.classList.remove('open');
+    if (focusTrigger) this.trigger.focus();
+  }
+
+  /** Loads the catalog and builds the items (once, or again when the extra fonts change). */
+  private async ensureBuilt(): Promise<void> {
+    if (!catalogLoaded()) this.status.textContent = 'Cargando fuentes…';
     const t0 = performance.now();
     const cat = await loadCatalog();
     if (!this.el.isConnected) return;
@@ -141,24 +177,17 @@ export class FontPicker {
       if (!this.lastOpenMs) this.lastOpenMs = performance.now() - t0;
       if (!cat) this.status.textContent = 'Biblioteca no disponible en esta versión: fuentes incluidas, del sistema y propias.';
     }
-    this.markCurrent(true);
   }
 
-  private whenVisible(): Promise<void> {
-    return new Promise((resolve) => {
-      const io = new IntersectionObserver((ents) => {
-        if (ents.some((e) => e.isIntersecting) || !this.el.isConnected) {
-          io.disconnect();
-          resolve();
-        }
-      });
-      io.observe(this.el);
-    });
-  }
-
-  /** Highlights the layer's font (and scrolls to it when asked). */
+  /** Shows the layer's font in the field and highlights it in the list (scrolling to it when asked). */
   markCurrent(scroll = false): void {
     const cur = this.host.current();
+    const nm = this.trigger.querySelector<HTMLElement>('.fp-cur-name')!;
+    if (cur && nm.textContent !== cur.family) {
+      nm.textContent = cur.family;
+      nm.style.fontFamily = cssFamily(cur.family);
+      this.trigger.setAttribute('aria-label', `Fuente: ${cur.family}`);
+    }
     const i = cur ? this.view.findIndex((x) => x.key === cur.fontId || (!cur.fontId && x.family === cur.family)) : -1;
     if (i >= 0) this.setActive(i, scroll);
     for (const r of this.rows.values()) r.classList.toggle('fp-cur', !!cur && (r.dataset.key === cur.fontId || r.dataset.family === cur.family));
@@ -363,9 +392,31 @@ export class FontPicker {
       if (t.closest('[data-fav]')) return this.toggleFav(i);
       this.choose(i, 'once');
     });
+    this.trigger.addEventListener('click', () => (this.expanded ? this.collapse() : void this.expand()));
+    // A click elsewhere closes the list (the choice is already applied).
+    document.addEventListener('pointerdown', (e) => {
+      if (this.expanded && this.el.isConnected && !this.el.contains(e.target as Node)) this.collapse(false);
+    });
     this.el.addEventListener('keydown', (e) => {
       const t = e.target as HTMLElement;
+      if (e.key === 'Escape' && this.expanded) {
+        e.preventDefault();
+        e.stopPropagation();
+        return this.collapse();
+      }
       if (t === this.catSel) return;
+      if (t === this.trigger && !this.items.length && /^(ArrowUp|ArrowDown)$/.test(e.key)) {
+        // Collapsed field: ↑ ↓ change the font like a native select (the list is built first).
+        e.preventDefault();
+        e.stopPropagation();
+        const step = e.key === 'ArrowDown' ? 1 : -1;
+        void this.ensureBuilt().then(() => {
+          this.markCurrent();
+          this.choose(this.active + step, 'live');
+        });
+        return;
+      }
+      if (t === this.trigger && e.key === 'Enter') return;
       const step = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : e.key === 'PageDown' ? 8 : e.key === 'PageUp' ? -8 : 0;
       if (step) {
         e.preventDefault();
@@ -374,9 +425,10 @@ export class FontPicker {
       } else if (e.key === 'Enter') {
         e.preventDefault();
         e.stopPropagation();
-        if (e.shiftKey) this.toggleFav(this.active);
-        else if (this.commitTimer) this.commit();
+        if (e.shiftKey) return this.toggleFav(this.active);
+        if (this.commitTimer) this.commit();
         else this.choose(this.active, 'once');
+        this.collapse();
       }
     });
     this.list.addEventListener('focusout', () => {

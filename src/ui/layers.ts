@@ -464,7 +464,7 @@ export class LayersPanel {
       <details class="sub text-props" data-sub="text" open>
         <summary>${ico('chevron', 'sub-chev')}${ico('type')} Texto</summary>
         <label class="prop"><span>TEXTO · doble clic en el visor para editar encima</span><textarea data-text="content" rows="2" spellcheck="false"></textarea></label>
-        <div class="prop prop-wide font-field"><span>FUENTE · <b data-font-name></b></span>
+        <div class="prop prop-wide font-field"><span>FUENTE</span>
           <div data-font-slot></div>
         </div>
         <div class="prop-row">
@@ -472,8 +472,8 @@ export class LayersPanel {
         </div>
         <p class="font-note" data-font-note role="status" aria-live="polite"></p>
         <div class="prop-row font-btns">
-          <button class="hw-btn icon-sm" data-font="local" aria-label="Fuentes del equipo" title="Usar las fuentes instaladas en este equipo (Chrome / Edge; pide permiso)">${ico('font-local')}</button>
-          <button class="hw-btn icon-sm" data-font="file" aria-label="Cargar archivo de fuente" title="Cargar un archivo .ttf, .otf, .woff o .woff2">${ico('font-file')}</button>
+          <button class="hw-btn hw-btn-sm font-src" data-font="local" title="Usar las fuentes instaladas en este equipo (Chrome / Edge; pide permiso)">${ico('font-local')} Fuentes del equipo</button>
+          <button class="hw-btn hw-btn-sm font-src" data-font="file" title="Cargar un archivo .ttf, .otf, .woff o .woff2 (solo se guarda en este equipo)">${ico('font-file')} Cargar fuente…</button>
         </div>
         <div class="prop-grid prop-grid-3">
           <label class="prop"><span>TAMAÑO px</span><input type="number" data-text="size" min="1" max="4000" step="1"></label>
@@ -511,11 +511,6 @@ export class LayersPanel {
     if (l.text) {
       const t = l.text;
       set(q('[data-text="content"]'), t.content);
-      const nm = q('[data-font-name]');
-      if (nm && nm.textContent !== t.font) {
-        nm.textContent = t.font;
-        nm.style.fontFamily = `"${t.font.replace(/["\\]/g, '')}", sans-serif`;
-      }
       const vs = q<HTMLSelectElement>('[data-text="variant"]');
       if (vs) {
         const opts = this.host.fontVariants(t);
