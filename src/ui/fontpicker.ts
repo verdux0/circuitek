@@ -1,10 +1,13 @@
 /**
- * Font picker: search (debounced, accent-insensitive), category filters, a virtualized list
- * whose visible rows preview the user's text lazily (IntersectionObserver + a load queue with
- * a concurrency limit), favourites and recents (localStorage, guarded) and keyboard control
- * (combobox pattern: focus stays in the search box, arrows move the active option).
+ * Font list inside the text panel (no dialog, so the canvas stays visible): each family is
+ * written in its own font; clicking one applies it at once, ↑ ↓ browse and apply live (one
+ * undo step when browsing stops). Search (debounced, accent-insensitive), category filter,
+ * virtualized rows whose font loads lazily (IntersectionObserver + a load queue with a
+ * concurrency limit), favourites and recents (localStorage, guarded).
+ *
+ * The element is persistent: the layers panel rebuilds its HTML and mounts it again, so the
+ * search, filter and scroll survive.
  */
-import { ico } from './icons';
 import {
   LoadQueue,
   catalogCategories,
@@ -30,21 +33,21 @@ export interface PickItem {
   entry: FontEntry | null;
   meta: string;
 }
+export type ApplyPhase = 'live' | 'end' | 'once';
 export interface FontPickerHost {
   /** Fonts outside the catalog (system / computer / user files). */
   extra(): { system: string[]; local: string[]; user: string[] };
-  /** Text of the active layer for the preview ('' = sample text). */
-  previewText(): string;
   current(): { fontId?: string; family: string } | null;
-  apply(item: PickItem): void;
+  apply(item: PickItem, phase: ApplyPhase): void;
 }
 
-const ROW = 52;
+const ROW = 40;
 const OVERSCAN = 6;
 const DEBOUNCE = 120;
+/** Browsing with the arrows stops being "live" after this pause: one undo step. */
+const COMMIT_MS = 700;
 const FAV_KEY = 'glitch-editor.fonts.favs';
 const RECENT_KEY = 'glitch-editor.fonts.recent';
-const SAMPLE = 'Glitch Ñandú 0123';
 const EXTRA_CATS: [string, string][] = [
   ['sistema', 'Sistema'],
   ['equipo', 'Del equipo'],
@@ -66,7 +69,7 @@ const cssFamily = (f: string): string => `"${f.replace(/["\\]/g, '')}", sans-ser
 export class FontPicker {
   readonly el: HTMLElement;
   private input: HTMLInputElement;
-  private chips: HTMLElement;
+  private catSel: HTMLSelectElement;
   private list: HTMLElement;
   private spacer: HTMLElement;
   private status: HTMLElement;
@@ -77,36 +80,31 @@ export class FontPicker {
   private favs: string[] = readList(store(), FAV_KEY);
   private recent: string[] = readList(store(), RECENT_KEY, 12);
   private timer = 0;
+  private commitTimer = 0;
   private raf = 0;
   private rows = new Map<number, HTMLElement>();
   private io: IntersectionObserver;
   private queue = new LoadQueue(4);
   private previewed = new Set<string>();
-  private restoreFocus: HTMLElement | null = null;
-  /** Time from open() to the first rendered rows with the full catalog (ms), for the report. */
+  private built = '';
+  /** Time to build the list with the full catalog on first mount (ms), for the report. */
   lastOpenMs = 0;
 
   constructor(private host: FontPickerHost) {
     const el = document.createElement('div');
-    el.className = 'sheet-backdrop fp-backdrop';
-    el.hidden = true;
+    el.className = 'fp';
     el.innerHTML = `
-      <section class="sheet fp-sheet" role="dialog" aria-modal="true" aria-labelledby="fp-title">
-        <header class="sheet-head">
-          <h2 id="fp-title">Fuentes</h2>
-          <button class="hw-btn icon sheet-close" data-act="close" aria-label="Cerrar" title="Cerrar (Esc)">${ico('close')}</button>
-        </header>
-        <input type="search" class="fp-q" id="fp-q" maxlength="60" autocomplete="off" spellcheck="false"
+      <div class="fp-bar">
+        <input type="search" class="fp-q" maxlength="60" autocomplete="off" spellcheck="false"
           role="combobox" aria-expanded="true" aria-controls="fp-list" aria-autocomplete="list"
           placeholder="Buscar fuente…" aria-label="Buscar fuente por nombre" />
-        <div class="fp-chips" role="group" aria-label="Filtrar por categoría"></div>
-        <p class="fp-status" role="status" aria-live="polite"></p>
-        <div class="fp-list" id="fp-list" role="listbox" aria-label="Fuentes disponibles" tabindex="-1"><div class="fp-spacer"></div></div>
-        <p class="fp-hint">↑ ↓ para moverte · Intro para aplicar · Mayús + Intro para marcar como favorita</p>
-      </section>`;
+        <select class="fp-cat" aria-label="Filtrar fuentes por categoría"></select>
+      </div>
+      <div class="fp-list" id="fp-list" role="listbox" aria-label="Fuentes: clic o ↑ ↓ para aplicarlas" tabindex="0"><div class="fp-spacer"></div></div>
+      <p class="fp-status" role="status" aria-live="polite"></p>`;
     this.el = el;
     this.input = el.querySelector('.fp-q')!;
-    this.chips = el.querySelector('.fp-chips')!;
+    this.catSel = el.querySelector('.fp-cat')!;
     this.list = el.querySelector('.fp-list')!;
     this.spacer = el.querySelector('.fp-spacer')!;
     this.status = el.querySelector('.fp-status')!;
@@ -114,40 +112,56 @@ export class FontPicker {
       for (const e of ents) if (e.isIntersecting) this.preview(e.target as HTMLElement);
     }, { root: this.list, rootMargin: '40px 0px' });
     onFontState((id, s) => {
-      if (this.el.hidden) return;
       for (const r of this.rows.values()) if (r.dataset.key === id) this.paintState(r, s);
     });
     this.bind();
   }
 
-  get isOpen(): boolean {
-    return !this.el.hidden;
-  }
-
-  async open(): Promise<void> {
+  /** Puts the list into the text panel (again after each rebuild of the panel). */
+  async mount(slot: HTMLElement): Promise<void> {
+    const scroll = this.list.scrollTop;
+    slot.append(this.el);
+    this.list.scrollTop = scroll;
+    // Nothing is fetched until the list is really on screen (the phone drawer may be closed).
+    if (!catalogLoaded()) {
+      this.status.textContent = 'Cargando fuentes…';
+      await this.whenVisible();
+      if (!this.el.isConnected) return;
+    }
     const t0 = performance.now();
-    this.restoreFocus = document.activeElement as HTMLElement | null;
-    this.el.hidden = false;
-    this.input.value = '';
-    this.cat = 'all';
-    this.status.textContent = 'Cargando catálogo…';
-    this.input.focus();
     const cat = await loadCatalog();
-    this.items = this.buildItems();
-    this.renderChips();
-    this.status.textContent = cat ? '' : 'La biblioteca de fuentes no está disponible en esta versión: solo fuentes incluidas, del sistema y propias.';
-    this.filter();
-    const cur = this.host.current();
-    const i = cur ? this.view.findIndex((x) => x.key === cur.fontId || x.family === cur.family) : -1;
-    this.setActive(Math.max(0, i), true);
-    this.lastOpenMs = performance.now() - t0;
+    if (!this.el.isConnected) return;
+    const ex = this.host.extra();
+    const sig = `${!!cat}|${ex.system.length}|${ex.local.length}|${ex.user.join(',')}`;
+    if (sig !== this.built) {
+      this.built = sig;
+      this.items = this.buildItems();
+      this.renderCats();
+      this.filter();
+      if (!this.lastOpenMs) this.lastOpenMs = performance.now() - t0;
+      if (!cat) this.status.textContent = 'Biblioteca no disponible en esta versión: fuentes incluidas, del sistema y propias.';
+    }
+    this.markCurrent(true);
   }
 
-  close(): void {
-    this.el.hidden = true;
-    clearTimeout(this.timer);
-    this.queue.clear();
-    if (this.restoreFocus?.isConnected) this.restoreFocus.focus();
+  private whenVisible(): Promise<void> {
+    return new Promise((resolve) => {
+      const io = new IntersectionObserver((ents) => {
+        if (ents.some((e) => e.isIntersecting) || !this.el.isConnected) {
+          io.disconnect();
+          resolve();
+        }
+      });
+      io.observe(this.el);
+    });
+  }
+
+  /** Highlights the layer's font (and scrolls to it when asked). */
+  markCurrent(scroll = false): void {
+    const cur = this.host.current();
+    const i = cur ? this.view.findIndex((x) => x.key === cur.fontId || (!cur.fontId && x.family === cur.family)) : -1;
+    if (i >= 0) this.setActive(i, scroll);
+    for (const r of this.rows.values()) r.classList.toggle('fp-cur', !!cur && (r.dataset.key === cur.fontId || r.dataset.family === cur.family));
   }
 
   private buildItems(): PickItem[] {
@@ -156,7 +170,7 @@ export class FontPicker {
     const seen = new Set<string>();
     for (const e of catalogLoaded()?.families ?? []) {
       seen.add(e.family.toLowerCase());
-      const styles = e.variable ? 'Variable' : `${e.variants.length} ${e.variants.length === 1 ? 'estilo' : 'estilos'}`;
+      const styles = e.variable ? 'variable' : `${e.variants.length} ${e.variants.length === 1 ? 'estilo' : 'estilos'}`;
       out.push({ key: e.id, family: e.family, kind: 'lib', categories: e.categories, entry: e, meta: `${labels.get(e.categories[0]) ?? e.categories[0]} · ${styles}` });
     }
     const { system, local, user } = this.host.extra();
@@ -167,25 +181,25 @@ export class FontPicker {
         out.push({ key: `${kind}:${f}`, family: f, kind, categories: [cat], entry: null, meta });
       }
     };
-    add(user, 'user', 'propias', 'Propia (solo en este equipo)');
-    add(system, 'system', 'sistema', 'Sistema');
-    add(local, 'local', 'equipo', 'Instalada en el equipo');
+    add(user, 'user', 'propias', 'propia');
+    add(system, 'system', 'sistema', 'sistema');
+    add(local, 'local', 'equipo', 'del equipo');
     return out.sort((a, b) => a.family.localeCompare(b.family));
   }
 
-  private renderChips(): void {
+  private renderCats(): void {
     const counts = new Map<string, number>();
     for (const it of this.items) for (const c of it.categories) counts.set(c, (counts.get(c) ?? 0) + 1);
-    const chips: [string, string][] = [
-      ['all', `Todas ${this.items.length}`],
-      ['favs', `★ Favoritas ${this.favs.length}`],
+    const opts: [string, string][] = [
+      ['all', `Todas (${this.items.length})`],
+      ['favs', `★ Favoritas (${this.favs.length})`],
       ['recent', 'Recientes'],
-      ...catalogCategories().map((c) => [c.id, `${c.label} ${c.count}`] as [string, string]),
-      ...EXTRA_CATS.filter(([id]) => counts.get(id)).map(([id, l]) => [id, `${l} ${counts.get(id)}`] as [string, string]),
+      ...catalogCategories().map((c) => [c.id, `${c.label} (${c.count})`] as [string, string]),
+      ...EXTRA_CATS.filter(([id]) => counts.get(id)).map(([id, l]) => [id, `${l} (${counts.get(id)})`] as [string, string]),
     ];
-    this.chips.innerHTML = chips
-      .map(([id, label]) => `<button type="button" class="fp-chip" data-cat="${escapeHtml(id)}" aria-pressed="${id === this.cat}">${escapeHtml(label)}</button>`)
-      .join('');
+    if (!opts.some(([id]) => id === this.cat)) this.cat = 'all';
+    this.catSel.innerHTML = opts.map(([id, label]) => `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`).join('');
+    this.catSel.value = this.cat;
   }
 
   private filter(): void {
@@ -203,14 +217,15 @@ export class FontPicker {
     this.rows.clear();
     this.active = 0;
     const n = this.view.length;
-    if (catalogLoaded() || this.items.length) this.status.textContent = n ? `${n} ${n === 1 ? 'fuente' : 'fuentes'}` : 'Ninguna fuente coincide';
+    this.status.textContent = n ? `${n} ${n === 1 ? 'fuente' : 'fuentes'} · clic o ↑ ↓ para aplicar` : 'Ninguna fuente coincide';
     this.render();
+    this.markCurrent();
   }
 
-  /** Renders the rows in (and near) the viewport; reuses nothing across filters (simple + correct). */
+  /** Renders the rows in (and near) the viewport. */
   private render(): void {
     const top = this.list.scrollTop;
-    const h = this.list.clientHeight || 400;
+    const h = this.list.clientHeight || 280;
     const first = Math.max(0, Math.floor(top / ROW) - OVERSCAN);
     const last = Math.min(this.view.length - 1, Math.ceil((top + h) / ROW) + OVERSCAN);
     for (const [i, r] of this.rows) {
@@ -220,7 +235,7 @@ export class FontPicker {
         this.rows.delete(i);
       }
     }
-    const text = this.previewText();
+    const cur = this.host.current();
     for (let i = first; i <= last; i++) {
       if (this.rows.has(i)) continue;
       const it = this.view[i];
@@ -229,13 +244,16 @@ export class FontPicker {
       r.id = `fp-o-${i}`;
       r.setAttribute('role', 'option');
       r.setAttribute('aria-selected', String(i === this.active));
+      r.setAttribute('aria-label', `${it.family}, ${it.meta}`);
       r.dataset.i = String(i);
       r.dataset.key = it.key;
+      r.dataset.family = it.family;
       r.style.top = `${i * ROW}px`;
+      if (cur && (it.key === cur.fontId || it.family === cur.family)) r.classList.add('fp-cur');
       const fav = this.favs.includes(it.key);
       r.innerHTML = `
-        <span class="fp-name">${escapeHtml(it.family)}<small>${escapeHtml(it.meta)}</small></span>
-        <span class="fp-prev" aria-hidden="true">${escapeHtml(text)}</span>
+        <span class="fp-prev">${escapeHtml(it.family)}</span>
+        <small class="fp-meta">${escapeHtml(it.meta)}</small>
         <span class="fp-state" aria-hidden="true"></span>
         <button type="button" class="fp-fav" tabindex="-1" data-fav aria-pressed="${fav}" aria-label="${fav ? 'Quitar de favoritas' : 'Añadir a favoritas'}: ${escapeHtml(it.family)}">${fav ? '★' : '☆'}</button>`;
       if (it.kind !== 'lib' || this.previewed.has(it.key)) this.showPreview(r, it);
@@ -246,11 +264,6 @@ export class FontPicker {
         this.io.observe(r);
       }
     }
-  }
-
-  private previewText(): string {
-    const t = this.host.previewText().split('\n')[0].trim().slice(0, 32);
-    return t || SAMPLE;
   }
 
   private showPreview(r: HTMLElement, it: PickItem): void {
@@ -269,12 +282,10 @@ export class FontPicker {
     this.io.unobserve(r);
     const it = this.view[Number(r.dataset.i)];
     if (!it?.entry || this.previewed.has(it.key)) return;
-    const text = this.previewText();
     const e = it.entry;
     this.queue.push(async () => {
-      // Skip rows scrolled away before their turn.
-      if (!r.isConnected) return;
-      const ok = await loadVariant(e, 400, false, text);
+      if (!r.isConnected) return; // scrolled away before its turn
+      const ok = await loadVariant(e, 400, false, it.family);
       if (!ok) return;
       this.previewed.add(it.key);
       if (r.isConnected && r.dataset.key === it.key) this.showPreview(r, it);
@@ -289,21 +300,41 @@ export class FontPicker {
     this.active = Math.max(0, Math.min(this.view.length - 1, i));
     if (scroll) {
       const y = this.active * ROW;
+      const h = this.list.clientHeight || 280;
       if (y < this.list.scrollTop) this.list.scrollTop = y;
-      else if (y + ROW > this.list.scrollTop + this.list.clientHeight) this.list.scrollTop = y + ROW - this.list.clientHeight;
+      else if (y + ROW > this.list.scrollTop + h) this.list.scrollTop = y + ROW - h;
       this.render();
     }
     for (const [k, r] of this.rows) r.setAttribute('aria-selected', String(k === this.active));
     this.input.setAttribute('aria-activedescendant', `fp-o-${this.active}`);
+    this.list.setAttribute('aria-activedescendant', `fp-o-${this.active}`);
   }
 
-  private choose(i: number): void {
+  private choose(i: number, phase: ApplyPhase): void {
     const it = this.view[i];
     if (!it) return;
+    this.setActive(i, true);
+    this.host.apply(it, phase);
+    clearTimeout(this.commitTimer);
+    this.commitTimer = 0;
+    if (phase === 'live') this.commitTimer = window.setTimeout(() => this.commit(), COMMIT_MS);
+    else this.remember(it);
+    for (const r of this.rows.values()) r.classList.toggle('fp-cur', r.dataset.key === it.key);
+  }
+
+  /** Ends a live browse: one undo step, and the font goes to the recents. */
+  private commit(): void {
+    clearTimeout(this.commitTimer);
+    this.commitTimer = 0;
+    const it = this.view[this.active];
+    if (!it) return;
+    this.host.apply(it, 'end');
+    this.remember(it);
+  }
+
+  private remember(it: PickItem): void {
     this.recent = pushRecent(this.recent, it.key);
     writeList(store(), RECENT_KEY, this.recent);
-    this.host.apply(it);
-    this.close();
   }
 
   private toggleFav(i: number): void {
@@ -311,56 +342,55 @@ export class FontPicker {
     if (!it) return;
     this.favs = this.favs.includes(it.key) ? this.favs.filter((k) => k !== it.key) : [it.key, ...this.favs];
     writeList(store(), FAV_KEY, this.favs);
-    const r = this.rows.get(i);
-    const b = r?.querySelector<HTMLButtonElement>('[data-fav]');
+    const b = this.rows.get(i)?.querySelector<HTMLButtonElement>('[data-fav]');
     if (b) {
       const on = this.favs.includes(it.key);
       b.textContent = on ? '★' : '☆';
       b.setAttribute('aria-pressed', String(on));
       b.setAttribute('aria-label', `${on ? 'Quitar de favoritas' : 'Añadir a favoritas'}: ${it.family}`);
     }
-    const chip = this.chips.querySelector<HTMLElement>('[data-cat="favs"]');
-    if (chip) chip.textContent = `★ Favoritas ${this.favs.length}`;
+    const o = this.catSel.querySelector<HTMLOptionElement>('option[value="favs"]');
+    if (o) o.textContent = `★ Favoritas (${this.favs.length})`;
   }
 
   private bind(): void {
     this.el.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
-      if (t === this.el || t.closest('[data-act="close"]')) return this.close();
-      const chip = t.closest<HTMLElement>('[data-cat]');
-      if (chip) {
-        this.cat = chip.dataset.cat!;
-        this.chips.querySelectorAll('[data-cat]').forEach((c) => c.setAttribute('aria-pressed', String(c === chip)));
-        this.filter();
-        this.input.focus();
-        return;
-      }
       const row = t.closest<HTMLElement>('.fp-row');
       if (!row) return;
+      e.stopPropagation();
       const i = Number(row.dataset.i);
       if (t.closest('[data-fav]')) return this.toggleFav(i);
-      this.choose(i);
+      this.choose(i, 'once');
     });
     this.el.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
+      const t = e.target as HTMLElement;
+      if (t === this.catSel) return;
+      const step = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : e.key === 'PageDown' ? 8 : e.key === 'PageUp' ? -8 : 0;
+      if (step) {
+        e.preventDefault();
         e.stopPropagation();
-        this.close();
-      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        this.choose(this.active + step, 'live');
+      } else if (e.key === 'Enter') {
         e.preventDefault();
-        this.setActive(this.active + (e.key === 'ArrowDown' ? 1 : -1), true);
-      } else if (e.key === 'PageDown' || e.key === 'PageUp') {
-        e.preventDefault();
-        const page = Math.max(1, Math.floor(this.list.clientHeight / ROW) - 1);
-        this.setActive(this.active + (e.key === 'PageDown' ? page : -page), true);
-      } else if (e.key === 'Enter' && e.target === this.input) {
-        e.preventDefault();
+        e.stopPropagation();
         if (e.shiftKey) this.toggleFav(this.active);
-        else this.choose(this.active);
+        else if (this.commitTimer) this.commit();
+        else this.choose(this.active, 'once');
       }
     });
-    this.input.addEventListener('input', () => {
+    this.list.addEventListener('focusout', () => {
+      if (this.commitTimer) this.commit();
+    });
+    this.input.addEventListener('input', (e) => {
+      e.stopPropagation();
       clearTimeout(this.timer);
       this.timer = window.setTimeout(() => this.filter(), DEBOUNCE);
+    });
+    this.catSel.addEventListener('change', (e) => {
+      e.stopPropagation();
+      this.cat = this.catSel.value;
+      this.filter();
     });
     this.list.addEventListener('scroll', () => {
       cancelAnimationFrame(this.raf);

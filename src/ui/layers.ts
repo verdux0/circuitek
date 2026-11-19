@@ -37,8 +37,8 @@ export interface LayersHost {
   toast(msg: string): void;
   /** Text layers. */
   editText(id: string, patch: Partial<TextProps>, phase: Phase): void;
-  /** Opens the font picker for the active text layer. */
-  openFontPicker(): void;
+  /** Puts the (persistent) font list into the text panel. */
+  mountFontList(slot: HTMLElement): void;
   /** Weight / style choices of the layer's font ("400", "700i"…); null when it has no known variants. */
   fontVariants(t: TextProps): { value: string; label: string }[] | null;
   /** Warning shown under the font (missing font, missing glyphs…), '' when all is fine. */
@@ -197,7 +197,6 @@ export class LayersPanel {
   private textButton(b: HTMLElement): void {
     const l = this.active();
     if (!l?.text) return;
-    if (b.dataset.font === 'pick') return this.host.openFontPicker();
     if (b.dataset.font === 'local') return this.host.loadLocalFonts();
     if (b.dataset.font === 'file') return this.host.pickFontFile();
     if (b.dataset.textToggle === 'bold') return this.host.editText(l.id, { bold: !l.text.bold }, 'once');
@@ -425,6 +424,10 @@ export class LayersPanel {
       this.props.innerHTML = this.host.doc().layers.length ? '<p class="layer-hint">Selecciona una capa en la lista o en el visor.</p>' : '';
       return;
     }
+    queueMicrotask(() => {
+      const slot = this.props.querySelector<HTMLElement>('[data-font-slot]');
+      if (slot) this.host.mountFontList(slot);
+    });
     this.props.innerHTML = `${l.text ? this.textBlock(l.text) : ''}
       <details class="sub" data-sub="transform" open>
       <summary>${ico('chevron', 'sub-chev')}${ico('contain')} Transformar y mezclar</summary>
@@ -461,10 +464,8 @@ export class LayersPanel {
       <details class="sub text-props" data-sub="text" open>
         <summary>${ico('chevron', 'sub-chev')}${ico('type')} Texto</summary>
         <label class="prop"><span>TEXTO · doble clic en el visor para editar encima</span><textarea data-text="content" rows="2" spellcheck="false"></textarea></label>
-        <div class="prop-row">
-          <div class="prop prop-wide"><span id="font-lbl">FUENTE</span>
-            <button type="button" class="hw-btn font-pick" data-font="pick" aria-labelledby="font-lbl font-cur" aria-haspopup="dialog" title="Elegir fuente: buscar, filtrar por categoría y previsualizar">
-              <span id="font-cur" data-font-name></span>${ico('chevron')}</button></div>
+        <div class="prop prop-wide font-field"><span>FUENTE · <b data-font-name></b></span>
+          <div data-font-slot></div>
         </div>
         <div class="prop-row">
           <label class="prop prop-wide"><span>VARIANTE</span><select data-text="variant" aria-label="Variante: peso y estilo"></select></label>

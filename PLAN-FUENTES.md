@@ -114,7 +114,7 @@ licencia por familia; se añadirán las que lleguen con su página de origen o e
   sin descargar nada; `document.fonts.load(variante, texto)` baja solo los archivos que esa variante y esos caracteres
   necesitan. Las variables declaran su rango (`weight: "200 700"`). Estados pendiente / cargando / lista / error, sin
   cargas duplicadas y con reintento. Las 7 fuentes base siguen empaquetadas en `fonts.ts` y no se registran dos veces.
-- **Selector** (`src/ui/fontpicker.ts`): buscador sin mayúsculas ni acentos con debounce de 120 ms, filtros por las 16
+- **Selector** (`src/ui/fontpicker.ts`, desde el 19-11: **lista dentro del panel de texto**, sin ventana; clic o ↑ ↓ aplican la fuente en directo sobre el lienzo y al parar queda un solo paso de deshacer): buscador sin mayúsculas ni acentos con debounce de 120 ms, filtros por las 16
   categorías + Sistema / Del equipo / Propias, lista virtualizada (filas de 52 px; ~23 en el DOM), vista previa con el
   texto de la capa cargada con `IntersectionObserver` y una cola de 4 cargas simultáneas, favoritas y recientes en
   `localStorage` (con `try/catch`), indicador de carga y de error. Patrón *combobox*: ↑ ↓ Re Pág / Av Pág, Intro aplica,

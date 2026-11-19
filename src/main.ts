@@ -95,6 +95,8 @@ function cleanFx(): GlitchState {
  *  once: discrete action (commit + full UI sync)
  */
 type Phase = 'live' | 'end' | 'once';
+/** The font list of the text panel, once created (afterChange runs before it exists). */
+let fontList: FontPicker | null = null;
 function pushIfChanged(before: string): void {
   if (before !== snapJson()) history.push(JSON.parse(before) as DocState);
 }
@@ -346,7 +348,7 @@ const layersPanel = new LayersPanel({
   fontsVersion: () => fonts.version,
   loadLocalFonts: () => void loadLocalFonts(),
   pickFontFile: () => fontFileInput.click(),
-  openFontPicker: () => void fontPicker.open(),
+  mountFontList: (slot) => void fontPicker.mount(slot),
   fontVariants: (t) => fontVariants(t),
   fontNote: (t) => fontNote(t),
   rowMenu: (id, x, y) => openRowMenu(id, x, y),
@@ -441,12 +443,12 @@ function refreshFontLayers(t: TextProps): void {
 }
 const fontPicker = new FontPicker({
   extra: () => ({ system: [...BUNDLED_FONTS, ...SYSTEM_FONTS], local: fonts.local, user: fonts.files }),
-  previewText: () => getLayer(doc, doc.active)?.text?.content ?? '',
   current: () => {
     const t = getLayer(doc, doc.active)?.text;
     return t ? { fontId: t.fontId, family: t.font } : null;
   },
-  apply: (it: PickItem) => {
+  apply: (it: PickItem, phase) => {
+    const my = ++pickSeq;
     const l = getLayer(doc, doc.active);
     if (!l?.text) return;
     const patch: Partial<TextProps> = { font: it.family, fontId: it.key, weight: undefined };
@@ -455,10 +457,12 @@ const fontPicker = new FontPicker({
       const p = pickVariant(it.entry, textWeight(l.text), l.text.italic);
       if (p) Object.assign(patch, { italic: p.italic, bold: p.weight >= 600, weight: p.weight === 400 || p.weight === 700 ? undefined : p.weight });
     }
-    void editText(l.id, patch, 'once');
+    // Browsing fast: a slower font that arrives late must not replace the newer choice.
+    void editText(l.id, patch, phase, () => my === pickSeq);
   },
 });
-document.body.append(fontPicker.el);
+let pickSeq = 0;
+fontList = fontPicker;
 
 /** Re-measures a text layer (its box follows the text, the center stays) and refreshes its UI raster. */
 function refreshText(l: Layer): void {
@@ -476,7 +480,7 @@ function refreshText(l: Layer): void {
 }
 
 /** Changes text properties. Font changes wait for the font to load so the box is measured right. */
-async function editText(id: string, patch: Partial<TextProps>, phase: Phase): Promise<void> {
+async function editText(id: string, patch: Partial<TextProps>, phase: Phase, wanted?: () => boolean): Promise<void> {
   const l = getLayer(doc, id);
   if (!l?.text) return;
   // The bold toggle drops an exact variant weight (700 / 400 again).
@@ -486,6 +490,7 @@ async function editText(id: string, patch: Partial<TextProps>, phase: Phase): Pr
   if (next.fontId === undefined) delete next.fontId;
   const fontChange = 'font' in patch || 'fontId' in patch || 'bold' in patch || 'italic' in patch || 'weight' in patch;
   if (fontChange) await loadTextFont(next, id);
+  if (wanted && !wanted()) return;
   editDoc((d) => {
     const x = getLayer(d, id);
     if (!x?.text) return;
@@ -626,6 +631,7 @@ function afterChange(full: boolean, docTouched = false): void {
     session.schedule();
     viewport.sync();
     layersPanel.sync();
+    fontList?.markCurrent();
     textEditor?.position();
     syncProjectLabel();
   }
