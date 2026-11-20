@@ -363,7 +363,7 @@ void main() {
 
 /**
  * Non-normal blend modes (W3C Compositing and Blending Level 1) of a layer already placed
- * in document space (u_src) over the opaque backdrop (u_dst).
+ * in document space (u_src) over the premultiplied backdrop (u_dst), which may be transparent.
  */
 export const COMP_FRAG = /* glsl */ `#version 300 es
 precision highp float;
@@ -420,8 +420,11 @@ vec3 blend(int m, vec3 b, vec3 s) {
 }
 
 void main() {
-  vec4 s = texture(u_src, v_uv);
-  vec3 b = texture(u_dst, v_uv).rgb;
-  float a = s.a * u_opacity;
-  o = vec4(mix(b, clamp(blend(u_mode, b, s.rgb), 0.0, 1.0), a), 1.0);
+  vec4 s = texture(u_src, v_uv);          // layer: straight alpha
+  vec4 d = texture(u_dst, v_uv);          // accumulator: premultiplied, maybe transparent
+  float sa = s.a * u_opacity;
+  vec3 b = d.a > 0.0 ? d.rgb / d.a : vec3(0.0);
+  // W3C compositing: where the backdrop is transparent the layer shows unblended.
+  vec3 cs = mix(s.rgb, clamp(blend(u_mode, b, s.rgb), 0.0, 1.0), d.a);
+  o = vec4(sa * cs + (1.0 - sa) * d.rgb, sa + d.a * (1.0 - sa));
 }`;

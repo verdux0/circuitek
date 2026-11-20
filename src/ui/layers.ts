@@ -82,6 +82,7 @@ export class LayersPanel {
           <label class="prop"><span>ANCHO</span><input type="number" data-doc="w" min="1" step="1"></label>
           <label class="prop"><span>ALTO</span><input type="number" data-doc="h" min="1" step="1"></label>
           <label class="prop prop-color"><span>FONDO</span><input type="color" data-doc="bg"></label>
+          <label class="prop-check" title="Sin fondo: las zonas vacías quedan transparentes en el visor y al exportar PNG, GIF y vídeo (WebM)"><input type="checkbox" data-doc="transparent"> Fondo transparente</label>
         </div>
         <div class="btn-grid btn-grid-6">
           <button class="hw-btn icon-sm" data-doc-act="rot-l" aria-label="Girar el lienzo 90° a la izquierda" title="Girar el lienzo 90° a la izquierda">${ico('rot-l')}</button>
@@ -324,6 +325,15 @@ export class LayersPanel {
     const prop = t.dataset.prop;
     const docKey = t.dataset.doc;
     if (docKey) {
+      if (docKey === 'transparent') {
+        if (phase !== 'end') return;
+        const on = (t as HTMLInputElement).checked;
+        this.host.editDoc((d) => {
+          if (on) d.transparent = true;
+          else delete d.transparent;
+        }, 'once');
+        return;
+      }
       if (phase === 'live' && docKey !== 'bg') return;
       this.host.editDoc((d) => {
         if (docKey === 'bg') d.bg = t.value;
@@ -512,6 +522,10 @@ export class LayersPanel {
     set(q('[data-doc="w"]'), String(d.w));
     set(q('[data-doc="h"]'), String(d.h));
     set(q('[data-doc="bg"]'), d.bg);
+    const tr = q<HTMLInputElement>('[data-doc="transparent"]');
+    if (tr) tr.checked = !!d.transparent;
+    const bgIn = q<HTMLInputElement>('[data-doc="bg"]');
+    if (bgIn) bgIn.disabled = !!d.transparent;
     const l = this.active();
     if (!l) return;
     const r1 = (n: number) => String(Math.round(n * 10) / 10);

@@ -329,6 +329,7 @@ export async function exportGif(host: ExportHost, doc: DocState, s: ExportSettin
     };
 
     // Global palette from frames spread over the whole loop (kept for reuse below).
+    const clear = !!doc.transparent;
     const sampleIdx = [...new Set(Array.from({ length: Math.min(8, n) }, (_, k) => Math.floor((k * n) / Math.min(8, n))))];
     const cache = new Map<number, ImageData>();
     const px: number[] = [];
@@ -337,14 +338,15 @@ export async function exportGif(host: ExportHost, doc: DocState, s: ExportSettin
       check(signal);
       const img = await frameAt(i);
       cache.set(i, img);
-      for (let p = 0; p < img.data.length; p += 4 * per) px.push(img.data[p], img.data[p + 1], img.data[p + 2], 255);
+      // Transparent document: the palette is made from the visible pixels only.
+      for (let p = 0; p < img.data.length; p += 4 * per) if (!clear || img.data[p + 3] >= 128) px.push(img.data[p], img.data[p + 1], img.data[p + 2], 255);
       progress(0.1 + 0.1 * ((k + 1) / sampleIdx.length), 'Calculando la paleta');
       await tick();
     }
     const samples = new Uint8Array(px).buffer;
-    post({ type: 'palette', samples, colors: s.gif.colors }, [samples]);
+    post({ type: 'palette', samples, colors: s.gif.colors, transparent: clear }, [samples]);
     const { palette } = await next('palette');
-    post({ type: 'start', w: plan.w, h: plan.h, palette, repeat: s.gif.repeat, dither: s.gif.dither });
+    post({ type: 'start', w: plan.w, h: plan.h, palette, repeat: s.gif.repeat, dither: s.gif.dither, transparent: clear });
 
     for (let i = 0; i < n; i++) {
       check(signal);
@@ -375,6 +377,31 @@ export interface VideoCaps {
   /** 'mp4' (H.264), 'webm' (VP9 fallback) or null (no encoder). */
   container: 'mp4' | 'webm' | null;
   reason: string;
+  /** VP9 with an alpha channel (transparent background; WebM only: H.264 has no alpha). */
+  alpha?: boolean;
+  /** Shown in the export dialog (why the container / transparency differ from what was asked). */
+  note?: string;
+}
+
+/**
+ * Whether a transparent WebM can be made: Mediabunny writes the alpha channel as a second VP9
+ * stream (WebM BlockAdditional), so plain VP9 encoding is enough — no native alpha encoder.
+ */
+export async function alphaVideoSupported(): Promise<boolean> {
+  if (typeof VideoEncoder === 'undefined') return false;
+  try {
+    const mb = await import('mediabunny');
+    return await mb.canEncodeVideo('vp9', { width: 1280, height: 720 });
+  } catch {
+    return false;
+  }
+}
+
+/** The capabilities for this document: a transparent background turns MP4 into WebM with alpha. */
+export function capsForDoc(doc: DocState, base: VideoCaps, alphaOk: boolean): VideoCaps {
+  if (!doc.transparent || !base.container) return base;
+  if (alphaOk) return { container: 'webm', reason: base.reason, alpha: true, note: 'Fondo transparente: MP4 (H.264) no guarda transparencia, así que se exporta WebM (VP9) con canal alfa.' };
+  return { ...base, note: 'Este navegador no codifica vídeo con transparencia: el fondo transparente saldrá negro. Para conservarla, exporta GIF o PNG.' };
 }
 
 /** What this browser can encode (checked once, async). */
@@ -447,7 +474,10 @@ export async function exportVideo(
     format: webm ? new mb.WebMOutputFormat() : new mb.Mp4OutputFormat({ fastStart: sink.writable ? false : 'in-memory' }),
     target,
   });
-  const video = new mb.VideoSampleSource({ codec: webm ? 'vp9' : 'avc', bitrate: mp4Bitrate(plan.w, plan.h, plan.fps, s.mp4.quality), keyFrameInterval: 2 });
+  const video = new mb.VideoSampleSource({
+    codec: webm ? 'vp9' : 'avc', bitrate: mp4Bitrate(plan.w, plan.h, plan.fps, s.mp4.quality), keyFrameInterval: 2,
+    alpha: webm && caps.alpha ? 'keep' : 'discard',
+  });
   output.addVideoTrack(video, { frameRate: plan.fps });
 
   // Audio from the first video layer, trimmed to the range and re-timed to start at 0.

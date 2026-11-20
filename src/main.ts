@@ -542,7 +542,7 @@ async function addTextLayer(): Promise<void> {
   await loadTextFont(t);
   let id = '';
   editDoc((d) => {
-    if (first) Object.assign(d, emptyDoc(), { bg: d.bg });
+    if (first) Object.assign(d, emptyDoc(), { bg: d.bg, transparent: d.transparent });
     const { w, h } = measureText(t);
     const l: Layer = { ...makeLayer(d, '', w, h, ''), text: t, autoName: true, scaleX: 1, scaleY: 1, fx: cleanFx() };
     if (!first) {
@@ -656,6 +656,7 @@ $('btn-dice').addEventListener('click', () => edit((s) => { s.seed = freshSeed()
 /** Push state into every widget. `full` = also rebuild things that would break a drag. */
 function afterChange(full: boolean, docTouched = false): void {
   if (docTouched) {
+    document.body.classList.toggle('doc-transparent', !!doc.transparent);
     syncPlayers();
     if (anim.current !== undefined && !doc.layers.length) anim.stop();
     session.schedule();
@@ -859,7 +860,7 @@ function insertLayer(key: string, w: number, h: number, name: string, media?: La
   const first = replace || doc.layers.length === 0;
   let layer!: Layer;
   editDoc((d) => {
-    if (first) Object.assign(d, emptyDoc(), { w, h, bg: d.bg });
+    if (first) Object.assign(d, emptyDoc(), { w, h, bg: d.bg, transparent: d.transparent });
     layer = { ...makeLayer(d, key, w, h, name), fx: newLayerFx() };
     if (media) layer.media = media;
     const i = d.layers.findIndex((l) => l.id === d.active);
@@ -2121,7 +2122,7 @@ document.addEventListener('visibilitychange', () => {
 $('btn-new').addEventListener('click', () => {
   if (!doc.layers.length) return;
   history.push(cloneDoc(doc));
-  doc = { ...emptyDoc(), bg: doc.bg };
+  doc = { ...emptyDoc(), bg: doc.bg, transparent: doc.transparent };
   project = null;
   savedJson = '';
   afterChange(true, true);
@@ -2175,6 +2176,7 @@ Object.assign(window, {
         return {
           format: (await input.getFormat()).name, codec: v?.codec ?? null, w: v?.displayWidth ?? 0, h: v?.displayHeight ?? 0,
           duration: await input.computeDuration(), fps: stats?.averagePacketRate ?? 0, frames: stats?.packetCount ?? 0, audio: a?.codec ?? null,
+          alpha: v ? await v.canBeTransparent() : false,
         };
       } finally {
         input.dispose();

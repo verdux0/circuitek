@@ -168,6 +168,14 @@ describe('dithering (palette mapping)', () => {
     const px = new Uint8ClampedArray(pal.flatMap((c) => [...c, 255]));
     for (const m of ['none', 'floyd'] as const) expect([...ditherToIndex(px, 4, 1, pal, m)]).toEqual([0, 1, 2, 3]);
   });
+  it('transparent GIF: alpha < 128 → the transparent index, colours never map to it', () => {
+    // Palette: black, white, then the reserved transparent entry (also black).
+    const pal = [[0, 0, 0], [255, 255, 255], [0, 0, 0]];
+    const px = new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255, 10, 10, 10, 0, 255, 255, 255, 127, 0, 0, 0, 128]);
+    for (const m of ['none', 'bayer', 'floyd'] as const) expect([...ditherToIndex(px, 5, 1, pal, m, 2)]).toEqual([0, 1, 2, 2, 0]);
+    // Without a transparent index alpha is ignored (opaque GIFs, as before).
+    expect([...ditherToIndex(px, 5, 1, pal.slice(0, 2), 'none')]).toEqual([0, 1, 0, 1, 0]);
+  });
   it('none: 50 % gray → all one color; Bayer and Floyd–Steinberg keep the average tone', () => {
     const px = gray(32, 32, 128);
     expect(new Set(ditherToIndex(px, 32, 32, bw, 'none')).size).toBe(1);

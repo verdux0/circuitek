@@ -73,6 +73,8 @@ export interface DocState {
   w: number;
   h: number;
   bg: string;
+  /** Transparent background: `bg` is not painted (PNG / GIF / WebM keep the alpha). */
+  transparent?: boolean;
   /** Bottom → top. */
   layers: Layer[];
   active: string | null;
@@ -343,6 +345,7 @@ export function sanitizeDoc(input: unknown): DocState {
     layers: [],
     active: null,
   };
+  if (o.transparent === true) d.transparent = true;
   for (const raw of Array.isArray(o.layers) ? o.layers : []) {
     if (!raw || typeof raw !== 'object') continue;
     const r = raw as Record<string, unknown>;

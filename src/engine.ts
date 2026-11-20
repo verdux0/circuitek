@@ -74,6 +74,8 @@ export class Engine {
     this.gl.render({ doc, global: original ? null : global, layerFx: !original, w, h });
     const p = original || !global ? null : encParams(global);
     if (!p) {
+      // Transparent pixels must not keep the previous frame.
+      ctx.clearRect(0, 0, w, h);
       ctx.drawImage(this.gl.canvas, 0, 0);
       this.onPresent();
       return;

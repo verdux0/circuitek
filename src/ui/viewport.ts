@@ -43,6 +43,8 @@ export class Viewport {
   private viewLayer = new Konva.Layer({ listening: false });
   private uiLayer = new Konva.Layer();
   private resultNode: Konva.Image;
+  /** Checkerboard under the result when the background is transparent (not part of the image). */
+  private checker: Konva.Rect;
   private border: Konva.Rect;
   private tr: Konva.Transformer;
   private proxies = new Map<string, Konva.Image>();
@@ -62,7 +64,16 @@ export class Viewport {
     this.stage = new Konva.Stage({ container: container as HTMLDivElement, width: container.clientWidth || 600, height: container.clientHeight || 400 });
     this.resultNode = new Konva.Image({ image: host.result, x: 0, y: 0, width: 1, height: 1, listening: false });
     this.border = new Konva.Rect({ x: 0, y: 0, width: 1, height: 1, stroke: '#ffffff55', strokeWidth: 1, strokeScaleEnabled: false, listening: false });
-    this.viewLayer.add(this.resultNode, this.border);
+    const tile = document.createElement('canvas');
+    tile.width = tile.height = 16;
+    const g = tile.getContext('2d')!;
+    g.fillStyle = '#9a9a9a';
+    g.fillRect(0, 0, 16, 16);
+    g.fillStyle = '#6a6a6a';
+    g.fillRect(0, 0, 8, 8);
+    g.fillRect(8, 8, 8, 8);
+    this.checker = new Konva.Rect({ x: 0, y: 0, width: 1, height: 1, fillPatternImage: tile as unknown as HTMLImageElement, fillPatternRepeat: 'repeat', listening: false, visible: false });
+    this.viewLayer.add(this.checker, this.resultNode, this.border);
     this.tr = new Konva.Transformer({
       rotateEnabled: true,
       flipEnabled: false,
@@ -168,6 +179,9 @@ export class Viewport {
   }
 
   private changed(): void {
+    // Squares keep 8 screen px at any zoom.
+    const z = this.stage.scaleX() || 1;
+    this.checker.fillPatternScale({ x: 1 / z, y: 1 / z });
     this.present();
     this.host.viewChanged();
   }
@@ -298,6 +312,8 @@ export class Viewport {
     if (sizeChanged && this.fitted && d.layers.length) queueMicrotask(() => this.fit());
     this.resultNode.size({ width: d.w, height: d.h });
     this.border.size({ width: d.w, height: d.h });
+    this.checker.size({ width: d.w, height: d.h });
+    this.checker.visible(!!d.transparent);
     const seen = new Set<string>();
     d.layers.forEach((l, i) => {
       seen.add(l.id);

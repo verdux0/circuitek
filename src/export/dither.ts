@@ -44,20 +44,30 @@ export function paletteSpread(colors: number): number {
   return 255 / Math.max(1, Math.cbrt(Math.max(2, colors)) - 1);
 }
 
-/** Maps RGBA pixels to palette indices (alpha ignored: GIF frames here are opaque). */
-export function ditherToIndex(rgba: Uint8ClampedArray | Uint8Array, w: number, h: number, palette: Palette, mode: Dither): Uint8Array {
+/**
+ * Maps RGBA pixels to palette indices. `transparentIndex` ≥ 0 (the palette's last entry):
+ * pixels with alpha < 128 get it (GIF transparency is 1 bit) and colours never map to it.
+ * Otherwise alpha is ignored (opaque frames).
+ */
+export function ditherToIndex(rgba: Uint8ClampedArray | Uint8Array, w: number, h: number, palette: Palette, mode: Dither, transparentIndex = -1): Uint8Array {
   const out = new Uint8Array(w * h);
-  const nearest = makeNearest(palette);
+  const clear = transparentIndex >= 0;
+  const nearest = makeNearest(clear ? palette.slice(0, transparentIndex) : palette);
+  const hole = (p: number) => clear && rgba[p + 3] < 128;
   if (mode === 'none') {
-    for (let i = 0, p = 0; i < out.length; i++, p += 4) out[i] = nearest(rgba[p], rgba[p + 1], rgba[p + 2]);
+    for (let i = 0, p = 0; i < out.length; i++, p += 4) out[i] = hole(p) ? transparentIndex : nearest(rgba[p], rgba[p + 1], rgba[p + 2]);
     return out;
   }
   if (mode === 'bayer') {
-    const s = paletteSpread(palette.length) * 0.5;
+    const s = paletteSpread(clear ? transparentIndex : palette.length) * 0.5;
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const i = y * w + x;
         const p = i * 4;
+        if (hole(p)) {
+          out[i] = transparentIndex;
+          continue;
+        }
         const t = ((BAYER4[((y & 3) << 2) | (x & 3)] + 0.5) / 16 - 0.5) * s;
         out[i] = nearest(rgba[p] + t, rgba[p + 1] + t, rgba[p + 2] + t);
       }
@@ -74,6 +84,10 @@ export function ditherToIndex(rgba: Uint8ClampedArray | Uint8Array, w: number, h
       const i = y * w + x;
       const p = i * 4;
       const e = (x + 1) * 3;
+      if (hole(p)) {
+        out[i] = transparentIndex; // no error is carried across a hole
+        continue;
+      }
       const r = rgba[p] + cur[e], g = rgba[p + 1] + cur[e + 1], b = rgba[p + 2] + cur[e + 2];
       const idx = nearest(r, g, b);
       out[i] = idx;

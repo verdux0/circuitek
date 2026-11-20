@@ -129,7 +129,9 @@ export class GLRenderer {
     canvas: HTMLCanvasElement = document.createElement('canvas'),
   ) {
     this.canvas = canvas;
-    const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, premultipliedAlpha: false, antialias: false, alpha: false });
+    // The accumulator holds premultiplied colour (see beginAccum), so the canvas does too:
+    // with a transparent background it is drawn / read with its alpha (readFb un-premultiplies).
+    const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, premultipliedAlpha: true, antialias: false, alpha: true });
     if (!gl) throw new Error('WebGL2 no está disponible en este navegador.');
     this.gl = gl;
     this.maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
@@ -386,6 +388,21 @@ export class GLRenderer {
     const out = new Uint8ClampedArray(w * h * 4);
     const row = w * 4;
     for (let y = 0; y < h; y++) out.set(buf.subarray((h - 1 - y) * row, (h - y) * row), y * row);
+    // The canvas (final image) is premultiplied; ImageData is straight alpha.
+    if (fb === null) {
+      for (let i = 0; i < out.length; i += 4) {
+        const a = out[i + 3];
+        if (a === 255) continue;
+        if (a === 0) {
+          out[i] = out[i + 1] = out[i + 2] = 0;
+          continue;
+        }
+        const k = 255 / a;
+        out[i] *= k;
+        out[i + 1] *= k;
+        out[i + 2] *= k;
+      }
+    }
     return new ImageData(out, w, h);
   }
 
@@ -571,10 +588,13 @@ export class GLRenderer {
     const gl = this.gl;
     if (this.canvas.width !== job.w) this.canvas.width = job.w;
     if (this.canvas.height !== job.h) this.canvas.height = job.h;
+    // Premultiplied accumulator: normal layers blend with SRC_ALPHA / ONE_MINUS_SRC_ALPHA,
+    // which is "over" for a premultiplied backdrop (opaque backgrounds: no difference).
     const [r, g, b] = hexRgb(job.doc.bg);
     gl.bindFramebuffer(gl.FRAMEBUFFER, set.accA.fb);
     gl.viewport(0, 0, set.w, set.h);
-    gl.clearColor(r, g, b, 1);
+    if (job.doc.transparent) gl.clearColor(0, 0, 0, 0);
+    else gl.clearColor(r, g, b, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     return { cur: set.accA, other: set.accB };
   }

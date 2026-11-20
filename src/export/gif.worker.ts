@@ -9,8 +9,9 @@ import { ditherToIndex } from './dither';
 import type { Dither } from './settings';
 
 export type GifRequest =
-  | { type: 'palette'; samples: ArrayBuffer; colors: number }
-  | { type: 'start'; w: number; h: number; palette: Palette; repeat: number; dither: Dither }
+  | { type: 'palette'; samples: ArrayBuffer; colors: number; transparent: boolean }
+  /** transparent: the palette's last entry is the transparent index (alpha < 128). */
+  | { type: 'start'; w: number; h: number; palette: Palette; repeat: number; dither: Dither; transparent: boolean }
   | { type: 'frame'; buf: ArrayBuffer; delayCs: number }
   | { type: 'finish' };
 export type GifResponse =
@@ -37,7 +38,10 @@ ctx.onmessage = (e: MessageEvent<GifRequest>) => {
   const m = e.data;
   try {
     if (m.type === 'palette') {
-      const palette = quantize(new Uint8Array(m.samples), m.colors, { format: 'rgb565' });
+      // Transparent GIF: one entry is reserved (last) for the transparent pixels.
+      const n = m.transparent ? Math.max(2, m.colors - 1) : m.colors;
+      const palette = m.samples.byteLength ? quantize(new Uint8Array(m.samples), n, { format: 'rgb565' }) : [[0, 0, 0]];
+      if (m.transparent) palette.push([0, 0, 0]);
       ctx.postMessage({ type: 'palette', palette } satisfies GifResponse);
     } else if (m.type === 'start') {
       cfg = m;
@@ -46,11 +50,14 @@ ctx.onmessage = (e: MessageEvent<GifRequest>) => {
       enc.writeHeader();
     } else if (m.type === 'frame') {
       if (!enc || !cfg) throw new Error('GIF: frame before start');
-      const index = ditherToIndex(new Uint8Array(m.buf), cfg.w, cfg.h, cfg.palette, cfg.dither);
+      const tIndex = cfg.transparent ? cfg.palette.length - 1 : -1;
+      const index = ditherToIndex(new Uint8Array(m.buf), cfg.w, cfg.h, cfg.palette, cfg.dither, tIndex);
       const first = frames === 0;
       // gifenc takes ms and stores centiseconds: pass cs × 10 so nothing is rounded twice.
       // Global palette only (written with the first frame): colors never jump between frames.
-      enc.writeFrame(index, cfg.w, cfg.h, first ? { first: true, palette: cfg.palette, repeat: cfg.repeat, delay: m.delayCs * 10 } : { delay: m.delayCs * 10 });
+      // Transparent: every frame is cleared before the next (dispose 2), so nothing shows through.
+      const alpha = cfg.transparent ? { transparent: true, transparentIndex: tIndex, dispose: 2 } : {};
+      enc.writeFrame(index, cfg.w, cfg.h, first ? { first: true, palette: cfg.palette, repeat: cfg.repeat, delay: m.delayCs * 10, ...alpha } : { delay: m.delayCs * 10, ...alpha });
       frames++;
       flush();
     } else if (m.type === 'finish') {

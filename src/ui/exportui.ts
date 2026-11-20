@@ -12,7 +12,7 @@ import {
   type ExportFormat, type ExportSettings,
 } from '../export/settings';
 import {
-  Cancelled, audioStatus, docInfo, exportGif, exportStill, exportVideo, planGif, planVideo, videoCaps,
+  Cancelled, alphaVideoSupported, audioStatus, capsForDoc, docInfo, exportGif, exportStill, exportVideo, planGif, planVideo, videoCaps,
   type ExportHost, type VideoCaps,
 } from '../export/exporter';
 import { DownloadSink, FolderSink, canPickFolder, ensurePermission, pickFolder, rememberFolder, savedFolder, type SaveSink } from '../export/save';
@@ -55,11 +55,17 @@ export class ExportUI {
   defaults: ExportSettings = loadDefaults();
   private folder: FileSystemDirectoryHandle | null = null;
   private caps: VideoCaps | null = null;
+  private alphaOk = false;
+  /** Video capabilities for the current document (transparent background → WebM with alpha). */
+  private get vcaps(): VideoCaps | null {
+    return this.caps ? capsForDoc(this.host.doc(), this.caps, this.alphaOk) : null;
+  }
   private running: AbortController | null = null;
   private dialog: HTMLElement | null = null;
 
   constructor(private host: ExportUiHost, private main: HTMLButtonElement, private arrow: HTMLButtonElement) {
     void savedFolder().then((h) => (this.folder = h));
+    void alphaVideoSupported().then((ok) => (this.alphaOk = ok));
     void videoCaps().then((c) => (this.caps = c)).catch(() => (this.caps = { container: null, reason: 'No se pudo comprobar el codificador de vídeo.' }));
     main.addEventListener('click', () => void this.runDefault());
     arrow.addEventListener('click', () => this.openMenu());
@@ -97,20 +103,20 @@ export class ExportUI {
     if (!doc.layers.length) return 'Importa una imagen, GIF o vídeo primero';
     if (format === 'png' || format === 'jpg') return null;
     const info = docInfo(doc, this.host.players);
-    if (!info.media && !info.generated) return 'Imagen fija: activa «Glitch animado» (Efectos) para exportar animación';
-    if (format === 'mp4' && this.caps && !this.caps.container) return this.caps.reason;
+    if (!info.media && !info.generated) return 'Sin nada animado: añade efectos a una capa o importa un GIF / vídeo';
+    if (format === 'mp4' && this.vcaps && !this.vcaps.container) return this.vcaps.reason;
     return null;
   }
 
   private formatLabel(f: ExportFormat): string {
-    if (f === 'mp4' && this.caps?.container === 'webm') return 'MP4 → WebM (VP9)';
+    if (f === 'mp4' && this.vcaps?.container === 'webm') return this.vcaps.alpha ? 'MP4 → WebM transparente' : 'MP4 → WebM (VP9)';
     return LABEL[f];
   }
 
   openMenu(): void {
     if (this.running) return;
     const r = this.arrow.getBoundingClientRect();
-    const desc: Record<ExportFormat, string> = { png: 'Imagen sin pérdida', jpg: 'Imagen comprimida', gif: 'Animación en bucle', mp4: 'Vídeo H.264' };
+    const desc: Record<ExportFormat, string> = { png: 'Imagen sin pérdida', jpg: 'Imagen comprimida', gif: 'Animación en bucle', mp4: this.vcaps?.alpha ? 'Vídeo VP9 con transparencia' : this.vcaps?.container === 'webm' ? 'Vídeo VP9' : 'Vídeo H.264' };
     const entries: MenuEntry[] = (['png', 'jpg', 'gif', 'mp4'] as ExportFormat[]).map((f) => {
       const why = this.why(f);
       return {
@@ -128,7 +134,7 @@ export class ExportUI {
   /* ------------------------------------ running ------------------------------------ */
 
   private nameFor(s: ExportSettings, w: number, h: number): string {
-    return renderFileName(s.template, { name: this.host.docName(), seed: this.host.seed(), date: new Date(), format: EXT[s.format], width: w, height: h }, s.format === 'mp4' && this.caps?.container === 'webm' ? 'webm' : EXT[s.format]);
+    return renderFileName(s.template, { name: this.host.docName(), seed: this.host.seed(), date: new Date(), format: EXT[s.format], width: w, height: h }, s.format === 'mp4' && this.vcaps?.container === 'webm' ? 'webm' : EXT[s.format]);
   }
 
   /** Output size the settings will produce (for the name preview and the notes). */
@@ -181,7 +187,7 @@ export class ExportUI {
         const r = await exportGif(this.host, doc, s, sink, ui.progress, ac.signal);
         msg = `${sink.name} · ${r.w}×${r.h} · ${r.frames} fotogramas → ${r.where}`;
       } else {
-        const caps = this.caps ?? (await videoCaps());
+        const caps = this.vcaps ?? (await videoCaps());
         const r = await exportVideo(this.host, doc, s, sink as SaveSink & { setWhole?(b: ArrayBuffer): void }, caps, ui.progress, ac.signal);
         msg = `${sink.name} · ${r.w}×${r.h} · ${r.frames} fotogramas · audio: ${r.audio} → ${r.where}`;
       }
@@ -298,7 +304,7 @@ export class ExportUI {
       const a = $('#ex-audio-why');
       const box = el.querySelector<HTMLInputElement>('#ex-audio');
       void (async () => {
-        const caps = this.caps ?? (await videoCaps());
+        const caps = this.vcaps ?? (await videoCaps());
         const st = caps.container ? await audioStatus(this.host.doc(), this.host, caps.container) : { ok: false, reason: caps.reason };
         a.textContent = st.ok ? `Se incluye el audio del vídeo (${st.codec?.toUpperCase()}).` : `${st.reason}`;
         if (box) {
@@ -411,9 +417,10 @@ export class ExportUI {
       if (p.frames > MAX_FRAMES) out.push({ text: `Máximo ${MAX_FRAMES} fotogramas.`, warn: true, block: true });
     } else {
       const p = planVideo(doc, info, s);
-      const codec = this.caps?.container === 'webm' ? 'VP9 (WebM)' : 'H.264';
+      const codec = this.vcaps?.container === 'webm' ? (this.vcaps.alpha ? 'VP9 con alfa (WebM)' : 'VP9 (WebM)') : 'H.264';
       out.push({ text: `${p.w}×${p.h} · ${p.fps} fps · ${fmtNum(p.end - p.start)} s · ${p.frames} fotogramas · ${codec} ≈ ${fmtNum(mp4Bitrate(p.w, p.h, p.fps, s.mp4.quality) / 1e6)} Mb/s` });
-      if (this.caps?.container === 'webm') out.push({ text: this.caps.reason, warn: true });
+      if (this.vcaps?.note) out.push({ text: this.vcaps.note, warn: !this.vcaps.alpha });
+      else if (this.vcaps?.container === 'webm') out.push({ text: this.vcaps.reason, warn: true });
       if (p.frames > WARN_FRAMES) out.push({ text: `${p.frames} fotogramas: tardará (cada fotograma pasa por todo el pipeline).`, warn: true });
       if (p.frames > MAX_FRAMES) out.push({ text: `Máximo ${MAX_FRAMES} fotogramas: acorta el rango o baja los fps.`, warn: true, block: true });
     }
