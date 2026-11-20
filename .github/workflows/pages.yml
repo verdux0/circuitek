@@ -27,7 +27,7 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm test
-      # base: './' in vite.config.ts → relative URLs, so dist works under /glitch-editor/.
+      # base: './' in vite.config.ts → relative URLs, so dist works under /circuitek/.
       - run: npm run build
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5

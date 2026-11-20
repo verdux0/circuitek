@@ -192,7 +192,8 @@ export interface GlitchState {
 export function defaultStageState(id: StageId): StageState {
   const p: Record<string, number> = {};
   for (const d of stageDef(id).params) p[d.id] = d.def;
-  return { on: true, p };
+  // Off: at their defaults the knobs change nothing, so the stage must not look engaged.
+  return { on: false, p };
 }
 
 export function defaultState(): GlitchState {
@@ -214,15 +215,23 @@ export function defaultState(): GlitchState {
 
 /** Does this stage currently alter the image? (drives LEDs and skips no-op passes) */
 export function stageActive(s: GlitchState, id: StageId): boolean {
-  const st = s.stages[id];
-  if (!st.on) return false;
-  const p = st.p;
+  return s.stages[id].on && stageAlters(id, s.stages[id].p);
+}
+
+/** Would these knob values alter the image if the stage were on? */
+export function stageAlters(id: StageId, p: Record<string, number>): boolean {
   switch (id) {
     case 'bus': return p.bits < 8 || p.xor > 0 || p.rot > 0 || p.swap > 0;
     case 'buffer': return p.stride !== 0 || p.repeat > 0 || p.echo > 0;
     case 'proc': return p.bayer > 0 || p.bleed > 0 || p.poster > 0 || p.sat > 0;
     case 'enc': return p.jpg > 0 || p.sort > 0;
   }
+}
+
+/** Turns on every stage whose knobs alter the image (presets / random set knobs only). */
+export function engageStages(s: GlitchState): GlitchState {
+  for (const id of STAGE_IDS) s.stages[id].on = stageAlters(id, s.stages[id].p);
+  return s;
 }
 
 export function cloneState(s: GlitchState): GlitchState {
@@ -270,8 +279,9 @@ export function sanitizeState(input: unknown): GlitchState {
       if (!raw || typeof raw !== 'object') continue;
       const p = (raw.p ?? {}) as Record<string, unknown>;
       const ss = defaultStageState(id);
-      ss.on = raw.on !== false;
       for (const d of stageDef(id).params) ss.p[d.id] = num(p[d.id], d);
+      // On only if it really does something (older states stored every stage on at defaults).
+      ss.on = raw.on !== false && stageAlters(id, ss.p);
       out.stages[id] = ss;
     }
   }
@@ -299,7 +309,7 @@ export function sanitizeMotion(input: unknown): Motion {
 export const motionFrames = (m: Motion): number => Math.max(2, Math.round(m.seconds * m.fps));
 
 export interface PresetFile {
-  app: 'glitch-editor';
+  app: 'circuitek';
   /** 2: the state carries `motion`. Version 1 files still load (default motion). */
   version: 2;
   name: string;
@@ -307,7 +317,7 @@ export interface PresetFile {
 }
 
 export function toPresetFile(name: string, s: GlitchState): PresetFile {
-  return { app: 'glitch-editor', version: 2, name, state: cloneState(s) };
+  return { app: 'circuitek', version: 2, name, state: cloneState(s) };
 }
 
 export function parsePresetFile(text: string): { name: string; state: GlitchState } {

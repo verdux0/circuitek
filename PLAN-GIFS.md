@@ -36,7 +36,7 @@ anota en THIRD-PARTY.md como servicio usado, no como código reutilizado.
   sin force-push.
 - `.gitignore` (+ certificados), `LICENSE`, `THIRD-PARTY.md` al día.
 - `.github/workflows/pages.yml`: `npm ci`, `tsc`, `npm test`, `npm run build`, `upload-pages-artifact` + `deploy-pages`,
-  permisos mínimos. Vite ya usa `base: './'` (rutas relativas): se comprueba sirviendo `dist` bajo `/glitch-editor/`.
+  permisos mínimos. Vite ya usa `base: './'` (rutas relativas): se comprueba sirviendo `dist` bajo `/circuitek/`.
 - `dev:phone`: `vite --host` + HTTPS con `@vitejs/plugin-basic-ssl` (se comprueba la compatibilidad con Vite 6.4).
 - `README-MOVIL.md` no existe en el proyecto: la sección «Usarlo en el teléfono» se escribe desde cero contra el proyecto
   real, y se marca «no comprobado» lo que necesite un dispositivo físico.

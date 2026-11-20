@@ -1,4 +1,4 @@
-/* ============ glitch editor · hardware skin ============ */
+/* ============ circuitek · hardware skin ============ */
 :root {
   --bg: #e8e6e1;
   --ink: #1d1d1f;
@@ -97,7 +97,7 @@ svg { display: block; }
 .deck { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
 /* ---------- top bar & logo ---------- */
-.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .logo { margin: 0; display: flex; align-items: center; gap: 10px; }
 .logo-word {
   position: relative;
@@ -338,6 +338,7 @@ svg { display: block; }
 .rack-row select { color: var(--ink); background: var(--panel-hi); box-shadow: none; font: 600 13px var(--font); }
 .rack-foot { font-size: 11px; color: var(--ink-soft); margin: 2px 0 0; line-height: 1.5; }
 .rack-toggle { display: none; }
+.export-dock { display: none; }
 
 .stages { display: flex; flex-direction: column; gap: 12px; }
 
@@ -348,7 +349,7 @@ svg { display: block; }
 .layer-empty, .layer-hint { margin: 0; font-size: 12.5px; color: var(--ink-soft); }
 .layers:not(.no-layers) .layer-empty, .layers.no-layers .doc-props { display: none; }
 .layer-row {
-  display: grid; grid-template-columns: 18px 46px 1fr 30px 30px 30px; gap: 4px; align-items: center;
+  display: grid; grid-template-columns: 18px 46px 1fr 30px 30px 30px 30px; gap: 4px; align-items: center;
   border: 2px solid var(--edge); border-radius: 6px; padding: 3px 4px; cursor: pointer;
   background: linear-gradient(var(--surface-hi), var(--surface-lo));
 }
@@ -486,6 +487,12 @@ svg { display: block; }
   box-shadow: 0 6px 20px #0005; transition: opacity 0.2s, transform 0.2s; pointer-events: none; max-width: calc(100vw - 32px);
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.has-action.show { pointer-events: auto; display: flex; align-items: center; gap: 12px; }
+.toast-action {
+  all: unset; cursor: pointer; font: 800 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase;
+  color: inherit; border: 2px solid currentColor; border-radius: 6px; padding: 0 12px; min-height: 32px; display: inline-flex; align-items: center;
+}
+.toast-action:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .overlay { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: #0005; }
 .progress-card { display: flex; align-items: center; gap: 12px; background: #1c1c1e; color: #f2f1ea; padding: 16px 22px; border-radius: 10px; font: 600 14px var(--mono); }
 .fatal { max-width: 520px; margin: 15vh auto; padding: 24px; }
@@ -501,6 +508,10 @@ svg { display: block; }
   .rack.open { transform: none; }
   .rack-toggle, .rack-toggle:hover { display: block; position: fixed; right: 14px; bottom: 16px; z-index: 16; background: linear-gradient(#2c2c2e, #151515); color: #fff; }
   .rack-inner { padding-bottom: 84px; }
+  /* Export stays reachable without opening the panel: bottom left, beside the panel button. */
+  .export-dock { display: flex; position: fixed; left: 14px; bottom: 16px; z-index: 16; height: 48px; filter: drop-shadow(0 4px 12px #0005); }
+  .export-dock .split-btn .ex-main { padding: 0 14px; }
+  .export-dock .split-btn .ex-arrow { width: 44px; }
 }
 @media (max-width: 560px) {
   .logo-word { font-size: 28px; }
@@ -590,9 +601,6 @@ svg { display: block; }
 }
 #mb-speed:focus-visible, .mb-seek:focus-visible, .mb-vol:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 #mb-loop.pressed, #mb-mute[aria-pressed='false'] { color: var(--accent-dk); }
-.mb-anim { align-items: center; gap: 6px; margin-left: auto; }
-.mb-anim input { width: 38px; height: 20px; }
-.mb-anim-label { font: 800 10px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
 .mb-note {
   font: 800 9.5px var(--mono); letter-spacing: 0.08em; color: #fff; background: var(--accent-dk);
   border-radius: 4px; padding: 3px 6px; white-space: nowrap;
@@ -680,6 +688,8 @@ details.sub[open] { display: flex; flex-direction: column; gap: 8px; }
   .btn-grid-7 { grid-template-columns: repeat(5, 1fr); }
 }
 @media (max-width: 430px) {
+  .topbar { row-gap: 8px; }
+  .topbar-actions { flex-wrap: wrap; }
   .logo-sub { display: none; }
   .logo-word { font-size: 24px; }
   .topbar .hw-btn.icon { width: 36px; }
@@ -783,10 +793,6 @@ html, body { overflow-x: hidden; }
 .export-backdrop.running .ex-progress { visibility: visible; }
 .export-backdrop.running .ex-body { opacity: 0.6; }
 
-.fx-anim-row { gap: 10px; }
-.fx-anim-row .switch { align-items: center; gap: 8px; }
-.fx-anim-label { font: 800 11px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
-.fx-anim-hint { color: var(--ink-soft); font-size: 11.5px; }
 
 @media (max-width: 560px) {
   /* The options dialog takes the whole screen on phones. */

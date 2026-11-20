@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mixSeed, mulberry32 } from '../src/prng';
-import { PAIRS, PINS, buildGpuPasses, defaultState, encParams, findPair, parsePresetFile, sanitizeState, stageActive, toPresetFile } from '../src/model';
+import { PAIRS, PINS, STAGE_IDS, buildGpuPasses, defaultState, encParams, findPair, parsePresetFile, sanitizeState, stageActive, stageAlters, toPresetFile } from '../src/model';
 import { FACTORY_PRESETS, randomState, variantOf } from '../src/presets';
 import { corruptJpegBytes, corruptionCount, findScanStart, pixelSort } from '../src/encoder/bytes';
 import { History } from '../src/history';
@@ -51,9 +51,24 @@ describe('CCD model', () => {
   it('bypass removes the pass, params enable it', () => {
     const s = defaultState();
     s.stages.bus.p.bits = 4;
+    s.stages.bus.on = true;
     expect(buildGpuPasses(s).map((p) => p.pass)).toEqual([0, 1]);
     s.stages.bus.on = false;
     expect(buildGpuPasses(s).map((p) => p.pass)).toEqual([0]);
+  });
+  it('stages are off until they alter the image (no stage looks engaged by default)', () => {
+    const s = defaultState();
+    for (const id of STAGE_IDS) expect(s.stages[id].on).toBe(false);
+    // Older states stored every stage on at its defaults: they load as off.
+    const old = sanitizeState({ ...s, stages: Object.fromEntries(STAGE_IDS.map((id) => [id, { on: true, p: s.stages[id].p }])) });
+    for (const id of STAGE_IDS) expect(old.stages[id].on).toBe(false);
+    // A stage with knobs that do something stays on; an explicit bypass stays off.
+    const live = sanitizeState({ ...s, stages: { bus: { on: true, p: { ...s.stages.bus.p, bits: 4 } }, proc: { on: false, p: { ...s.stages.proc.p, sat: 40 } } } });
+    expect(live.stages.bus.on).toBe(true);
+    expect(live.stages.proc.on).toBe(false);
+  });
+  it('presets turn on exactly the stages they use', () => {
+    for (const { state } of FACTORY_PRESETS) for (const id of STAGE_IDS) expect(state.stages[id].on).toBe(stageAlters(id, state.stages[id].p));
   });
   it('effect 0 -> cables produce no pass', () => {
     const s = defaultState();

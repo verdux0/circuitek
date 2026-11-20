@@ -1,4 +1,4 @@
-# glitch editor · circuit bent
+# circuitek · circuit bent
 
 Editor de fotos **100 % local** que simula el *circuit bending* de una cámara digital. Importas una foto, **puenteas pines del chip CCD con cables** directamente bajo la imagen y giras knobs. Ninguna imagen sale de tu equipo: todo se procesa en el navegador (WebGL2 + Web Workers), sin servidor. La única función que usa la red es el [buscador de GIFs](#buscar-gif-gifcities--internet-archive), y solo cuando buscas.
 
@@ -10,7 +10,7 @@ Inspirado en [Glitchy Camera](https://glitchycam.com), llevado a la edición de 
 |---|---|---|
 | ![Mini chip](docs/screenshots/13-mini-chip-cable.png) | ![Vista ampliada](docs/screenshots/14-vista-ampliada-mismo-cable.png) | ![Móvil](docs/screenshots/15-movil-mini-chip.png) |
 
-**Pruébalo en el navegador:** https://verdux0.github.io/glitch-editor/ (GitHub Pages; ver [Usarlo en el teléfono](#usarlo-en-el-teléfono)). Para publicarlo en otro sitio (Cloudflare Pages, Netlify Drop o GitHub Pages), ver [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md).
+**Pruébalo en el navegador:** https://verdux0.github.io/circuitek/ (GitHub Pages; ver [Usarlo en el teléfono](#usarlo-en-el-teléfono)). Para publicarlo en otro sitio (Cloudflare Pages, Netlify Drop o GitHub Pages), ver [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md).
 
 ## Arrancar
 
@@ -139,16 +139,15 @@ Las capas y su posición forman parte del historial (Ctrl+Z) y de los proyectos 
 | Velocidad | 0,25× a 2× |
 | 🔁 | bucle activado/desactivado |
 | 🔇 + volumen | silencio (**M**) y volumen. Desactivado en GIF y en vídeos sin audio. El vídeo empieza silenciado (reglas de autoplay) |
-| **Glitch animado** | activo: el ruido cambia en cada fotograma (la seed se mezcla con el índice del fotograma); inactivo: el patrón se mantiene fijo |
 | JPEG/SORT: SOLO EN PAUSA | aviso que aparece mientras se reproduce si la capa tiene activo el codificador |
 
-- **Glitch animado está activo por defecto**: en un CCD real el ruido de lectura es distinto en cada fotograma, y un patrón fijo sobre una imagen en movimiento parece suciedad en la pantalla. Si el sistema tiene activado *reducir movimiento*, empieza desactivado. Es determinista: el mismo fotograma con la misma seed y los mismos ajustes da los mismos píxeles.
+- **Todas las capas son animadas** (imágenes, textos, vídeos y GIF): no hay interruptor. Empiezan **en pausa**, en el estado base, y nunca arrancan solas. **Una sola barra lo mueve todo**: ▶/⏸, búsqueda y ±1 fotograma actúan a la vez sobre el reloj de los efectos y sobre cada vídeo/GIF, y cada fuente da la vuelta a su propia duración. El tiempo de la barra es el del vídeo/GIF seleccionado (o el primero), o el del bucle de efectos si no hay ninguno. Los efectos siguen siempre el reloj de efectos, nunca los fotogramas del GIF, así que añadir un GIF no se lleva la animación de los efectos. Es determinista: el mismo fotograma con la misma seed y los mismos ajustes da los mismos píxeles.
 - **Codificador (JPEG + pixel sort) solo en pausa**: cuesta unos 165 ms por fotograma (lectura de la GPU + Worker), así que el vídeo bajaría a unos 5 fps y los fotogramas llegarían tarde. Mientras se reproduce se salta y aparece el aviso; al pausar, capturar o exportar se aplica completo.
 - **Capturar** guarda el fotograma actual con los ajustes actuales, a resolución completa, como proyecto (una imagen). **Exportar** en PNG/JPG guarda ese fotograma; en GIF/MP4, la animación (ver [Exportar](#exportar)).
 - **Sesión:** al recargar la página el vídeo vuelve (el archivo se guarda en IndexedDB y se reabre sin leerlo entero en memoria). Los **proyectos** y los archivos `.glitch` guardan el fotograma actual como imagen, no el vídeo.
-- **Imagen fija animada:** con «Glitch animado» activo en una imagen o un texto (pestaña Efectos), aparece la misma barra con **▶/■**, **±1 fotograma** y velocidad. ▶ anima el glitch en el editor; ■ para y vuelve exactamente al estado base. Nunca arranca sola, nada entra en el historial de deshacer y, con *reducir movimiento* activado en el sistema, ▶ avisa y no arranca (un segundo ▶ en 5 s la reproduce igualmente). Lo que ves en el fotograma N es **píxel a píxel** el fotograma N del GIF/MP4 exportado: la vista previa y la exportación usan la misma función (`stateAtFrame`, `src/motion.ts`). Con JPEG/pixel sort activo, la animación no se bloquea: se mantiene el último fotograma codificado hasta que llega el siguiente.
-- **Movimiento** (panel bajo «Glitch animado», en Efectos), tres modos:
-  - **Parpadeo:** el ruido del glitch cambia en cada fotograma (lo que hacía «Glitch animado»).
+- **Imagen fija animada:** con cualquier capa aparece la barra con **▶/⏸**, **±1 fotograma** y velocidad. ▶ anima el glitch en el editor; ⏸ lo deja en el fotograma actual. Nunca arranca sola, nada entra en el historial de deshacer y, con *reducir movimiento* activado en el sistema, ▶ avisa y no arranca (un segundo ▶ en 5 s la reproduce igualmente). Lo que ves en el fotograma N es **píxel a píxel** el fotograma N del GIF/MP4 exportado: la vista previa y la exportación usan la misma función (`stateAtFrame`, `src/motion.ts`). Con JPEG/pixel sort activo, la animación no se bloquea: se mantiene el último fotograma codificado hasta que llega el siguiente.
+- **Movimiento** (panel en Efectos), tres modos:
+  - **Parpadeo:** el ruido del glitch cambia en cada fotograma (el antiguo «Glitch animado»).
   - **Deriva suave:** cada parámetro oscila alrededor de su valor con un seno (`base + A·sin(2π·k·i/N + φ)`). Fase y ciclos salen de la seed, y como los ciclos son un número entero el bucle cierra perfecto.
   - **Saltos:** cada pocos fotogramas, algunos parámetros saltan a un valor cercano y se mantienen. También sale de la seed.
 
@@ -169,7 +168,7 @@ Las capas y su posición forman parte del historial (Ctrl+Z) y de los proyectos 
 
 En el panel **Herramientas**, **Exportar · PNG ▾**:
 - **Exportar** (el botón grande) exporta directamente con el formato y los ajustes **predeterminados**, sin abrir nada. Muestra progreso y botón *Cancelar*.
-- **▾** abre la lista de formatos: **PNG, JPG, GIF y MP4**. Los que no tienen sentido con lo cargado salen **desactivados con el motivo** (por ejemplo GIF/MP4 con una imagen fija sin «Glitch animado»). Se maneja con flechas, Inicio/Fin, Intro y Esc, y en móvil tiene filas de 44 px.
+- **▾** abre la lista de formatos: **PNG, JPG, GIF y MP4**. Los que no tienen sentido con lo cargado salen **desactivados con el motivo** (por ejemplo GIF/MP4 sin ninguna capa con efectos). Se maneja con flechas, Inicio/Fin, Intro y Esc, y en móvil tiene filas de 44 px.
 - Al elegir un formato se abre el **diálogo de opciones** (a pantalla completa en móvil):
 
 | Formato | Opciones |
@@ -187,7 +186,7 @@ En el panel **Herramientas**, **Exportar · PNG ▾**:
 **Cómo se exporta:** fotograma a fotograma y fuera de tiempo real, con el mismo pipeline (todas las etapas, incluido JPEG/pixel sort), nunca grabando la pantalla. El resultado no depende de la potencia del equipo, y el mismo estado en el mismo instante da los mismos píxeles: dos exportaciones iguales salen idénticas byte a byte. Los vídeos se leen fotograma exacto con [Mediabunny](https://mediabunny.dev) en vez de buscar en el `<video>`. El GIF se cuantiza y codifica en un **Worker** y se escribe por trozos. La interfaz sigue respondiendo durante la exportación.
 
 **GIF en bucle perfecto:**
-- *Animación generada* (imagen fija con «Glitch animado», interruptor en Efectos): el ruido de cada fotograma es `frameSeed(seed, i)` con *i* = 0…N−1, y el pulso opcional del EFFECT es `sin(2π·k·i/N)` con *k* ciclos enteros. Todo es periódico con N, así que el último fotograma enlaza con el primero como un paso más.
+- *Animación generada* (imágenes o textos con efectos, sin vídeo/GIF): el ruido de cada fotograma es `frameSeed(seed, i)` con *i* = 0…N−1, y el pulso opcional del EFFECT es `sin(2π·k·i/N)` con *k* ciclos enteros. Todo es periódico con N, así que el último fotograma enlaza con el primero como un paso más.
 - *Vídeo de entrada:* **fundido cruzado** (predeterminado), **ida y vuelta** o **recortar al bucle más cercano** (busca el corte, entre la mitad y el final, cuyo fotograma más se parece al primero). El fundido es el predeterminado porque vale para cualquier vídeo y no invierte el movimiento. Durante el solape mezcla el final con el principio, de modo que el salto del último fotograma al primero es un paso normal.
 - **Paleta global** (una para toda la animación, con fotogramas de muestra): los colores no saltan entre fotogramas ni en la costura. **Dithering ordenado por defecto:** es estable en el tiempo; Floyd–Steinberg «hierve» de un fotograma a otro.
 - Bloque **NETSCAPE2.0** con repeticiones = 0 (infinito) por defecto. Los retardos van en centésimas: con 50, 33,3, 25, 20, 16,7, 12,5 o 10 fps son exactos. Con otros (p. ej. 30 fps) se reparten 3-3-4 cs para que la media sea exacta, y el diálogo lo avisa. Más de 50 fps no es fiable en GIF y se limita.
@@ -284,7 +283,7 @@ El botón de la lupa, junto a Importar (atajo **G**), abre un buscador de [GifCi
 ## Usarlo en el teléfono
 
 **1. La página publicada (lo más fácil).** Abre {PAGES} en el navegador del móvil. Es HTTPS, así que funcionan todas las funciones que exigen contexto seguro. Se publica sola en cada push a `main` (`.github/workflows/pages.yml`). La primera vez, el dueño del repositorio tiene que activarla en *Settings → Pages → Build and deployment → Source: GitHub Actions*.
-*Estado:* el build se ha comprobado servido bajo `/glitch-editor/` (sin errores 404, en escritorio y a 390 px). La página publicada y su uso en un móvil real están **sin comprobar**.
+*Estado:* el build se ha comprobado servido bajo `/circuitek/` (sin errores 404, en escritorio y a 390 px). La página publicada y su uso en un móvil real están **sin comprobar**.
 
 **2. Desde tu ordenador, en la red local (para desarrollar).**
 
@@ -322,7 +321,7 @@ npm run dev:phone
 - `tools/verify.py` (Playwright + Chrome): genera las hojas de contacto de `docs/screenshots/` y comprueba que los 15 pares son distintos entre sí, que cada knob altera la imagen, el determinismo (también tras recargar), la ida y vuelta de presets, la exportación a resolución completa, la importación de JPG/PNG/WebP (cada archivo como capa), el arrastre de cables y knobs, el **mini chip** (crear cable arrastrando y con teclado, slider de resistencia con deshacer, quitar cable, máximo 3, mismo estado que la vista ampliada en ambos sentidos, W abre la vista ampliada), que el visor + mini chip + knobs caben sin scroll a 1400×1000 y 1280×800, que nada desborda a 390 px, deshacer/rehacer, que no hay peticiones de red externas y que no hay errores en consola. Resultado en `docs/screenshots/verificacion.txt`.
 - `tools/verify_gifsearch.py` (lo ejecuta `verify.py`; también funciona solo): el buscador **con la red interceptada** (nada llega al Internet Archive), a 390 px y con emulación táctil. Comprueba cero peticiones al cargar y al abrir el panel, el debounce (una petición por búsqueda), 48 resultados y «Cargar más», enlaces a la Wayback Machine y crédito, miniaturas sin `Referer` y solo de los dominios esperados, los estados sin resultados, error y sin conexión, que el contenido remoto no se ejecuta como HTML, cancelar una descarga, que un GIF se carga como capa animada y que la consola queda limpia. Los tests de `tests/gifsearch.test.ts` usan una respuesta real guardada como fixture y nunca llaman a la red.
 - `tools/verify_export.py` (lo ejecuta `verify.py`; también funciona solo): botón y lista (role=menu, teclado, formatos desactivados con su motivo), PNG por defecto (firma, tamaño y nombre de plantilla), JPG desde el diálogo (calidad, escala, vista previa del nombre, se decodifica), predeterminado tras recargar y restablecer, GIF generado y de vídeo con los tres modos de bucle (cabecera, NETSCAPE2.0 infinito, número de fotogramas, retardos, tamaño y **costura último → primero frente al paso normal**), aviso y reparto de retardos a 30 fps, MP4 generado y de vídeo (H.264, tamaño, fps, duración, audio AAC, con el parser de Mediabunny) que se reproduce en un `<video>`, determinismo (dos GIF idénticos byte a byte), exportar a carpeta (una carpeta OPFS en lugar del selector nativo, que Playwright no puede manejar), cancelar MP4 y GIF a mitad sin dejar archivo, interfaz viva durante la exportación, y lista y diálogo en móvil.
-- `tools/verify_media.py` (lo ejecuta `verify.py`; también funciona solo): graba en el propio Chrome vídeos de prueba (WebM y MP4 a 720p/1080p con audio, un MP4 con rotación de 90° en los metadatos, un GIF animado y un archivo corrupto; ver `tools/media_fixtures.py`, sin ffmpeg) y comprueba importar, movimiento, pausa + knob, que en pausa no se renderiza en bucle, búsqueda, ±1 fotograma, velocidad, bucle, volumen, silencio, atajos, Glitch animado, el aviso del codificador, captura y export a resolución completa, el hash determinista del mismo fotograma, los fps a 720p/1080p, la rotación, GIF con `ImageDecoder` y con omggif (`?gif=omggif`), cambiar entre vídeo e imagen (y deshacer), recargar sin dejar `<video>` colgados, móvil a 390 px, cero errores en consola y cero peticiones externas.
+- `tools/verify_media.py` (lo ejecuta `verify.py`; también funciona solo): graba en el propio Chrome vídeos de prueba (WebM y MP4 a 720p/1080p con audio, un MP4 con rotación de 90° en los metadatos, un GIF animado y un archivo corrupto; ver `tools/media_fixtures.py`, sin ffmpeg) y comprueba importar, movimiento, pausa + knob, que en pausa no se renderiza en bucle, búsqueda, ±1 fotograma, velocidad, bucle, volumen, silencio, atajos, el aviso del codificador, captura y export a resolución completa, el hash determinista del mismo fotograma, los fps a 720p/1080p, la rotación, GIF con `ImageDecoder` y con omggif (`?gif=omggif`), cambiar entre vídeo e imagen (y deshacer), recargar sin dejar `<video>` colgados, móvil a 390 px, cero errores en consola y cero peticiones externas.
 
 ```bash
 npm run build && npx vite preview --port 4173 &

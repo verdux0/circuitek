@@ -1,5 +1,5 @@
 {
-  "name": "glitch-editor",
+  "name": "circuitek",
   "version": "0.1.0",
   "description": "Editor de fotos glitch local que simula el circuit bending de una cámara",
   "scripts": {

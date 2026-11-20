@@ -7,6 +7,7 @@
  *   the browser decides the folder (said in the UI).
  */
 import { createStore, del, get, set, type UseStore } from 'idb-keyval';
+import { migrateIdb } from '../legacy';
 
 export interface SaveSink {
   readonly name: string;
@@ -22,12 +23,14 @@ export interface SaveSink {
 export const canPickFolder = (): boolean => typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function';
 
 let store: UseStore | null = null;
-const handles = (): UseStore => (store ??= createStore('glitch-editor-export', 'handles'));
+const handles = (): UseStore => (store ??= createStore('circuitek-export', 'handles'));
+const migrated = (): Promise<void> => migrateIdb('circuitek-export', 'handles', handles());
 
 /** The remembered export folder (null if none or not supported). */
 export async function savedFolder(): Promise<FileSystemDirectoryHandle | null> {
   if (!canPickFolder()) return null;
   try {
+    await migrated();
     return ((await get('folder', handles())) as FileSystemDirectoryHandle | undefined) ?? null;
   } catch {
     return null;

@@ -51,6 +51,8 @@ export class StagesPanel {
       reset.setAttribute('aria-label', `Restablecer ${def.name}`);
       reset.addEventListener('click', () => this.host.edit((s) => {
         for (const p of def.params) s.stages[def.id].p[p.id] = p.def;
+        // At defaults the stage does nothing: it no longer shows as engaged.
+        s.stages[def.id].on = false;
       }, 'once'));
       card.querySelector('.module-head')!.append(reset);
       this.cards.set(def.id, card);

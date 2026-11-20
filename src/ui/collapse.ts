@@ -6,7 +6,7 @@
  */
 import { ico } from './icons';
 
-const KEY = 'glitch-editor:collapsed';
+const KEY = 'circuitek:collapsed';
 let state: Record<string, boolean> = {};
 try {
   state = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, boolean>;

@@ -27,11 +27,11 @@ export interface ExportUiHost extends ExportHost {
   menu: ContextMenu;
   /** Pauses every video / GIF (exports render their own frames). */
   pauseMedia(): void;
-  /** Motion of the generated animation (still layers with «Glitch animado»), or null. */
+  /** Motion of the generated animation (the effects layer's «Movimiento»), or null. */
   motion(): Motion | null;
 }
 
-const STORE_KEY = 'glitch-editor:export';
+const STORE_KEY = 'circuitek:export';
 const LABEL: Record<ExportFormat, string> = { png: 'PNG', jpg: 'JPG', gif: 'GIF', mp4: 'MP4' };
 /** Hard cap for animated exports (frames). */
 export const MAX_FRAMES = 3600;

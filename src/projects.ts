@@ -12,6 +12,7 @@
  */
 import { createStore, del, get, keys, set, type UseStore } from 'idb-keyval';
 import { cloneDoc, sanitizeDoc, type DocState } from './doc';
+import { migrateIdb } from './legacy';
 
 export interface ProjectMeta {
   id: string;
@@ -37,7 +38,9 @@ export interface LoadedProject {
 }
 type BlobSource = Blob | (() => Promise<Blob>);
 
-export const PROJECT_FILE_FORMAT = 'glitch-editor-project';
+export const PROJECT_FILE_FORMAT = 'circuitek-project';
+/** Files saved before the rename to circuitek. */
+const LEGACY_FILE_FORMAT = 'glitch-editor-project';
 
 /** Image keys (bitmaps) a document needs. */
 export function docImageKeys(d: DocState): string[] {
@@ -70,14 +73,16 @@ export class ProjectStore {
   private have = new Set<string>();
   private ready: Promise<void>;
 
-  constructor(dbName = 'glitch-editor-projects') {
+  constructor(dbName = 'circuitek-projects') {
     try {
       this.store = createStore(dbName, 'projects');
     } catch {
       this.store = null;
     }
     this.ready = this.store
-      ? keys(this.store).then((ks) => ks.forEach((k) => String(k).startsWith('p:') || this.have.add(String(k)))).catch(() => {})
+      ? migrateIdb(dbName, 'projects', this.store)
+          .then(() => keys(this.store!))
+          .then((ks) => ks.forEach((k) => String(k).startsWith('p:') || this.have.add(String(k)))).catch(() => {})
       : Promise.resolve();
   }
 
@@ -93,6 +98,7 @@ export class ProjectStore {
   /** All projects, most recently saved first (without their documents). */
   async list(): Promise<ProjectMeta[]> {
     if (!this.store) return [];
+    await this.ready;
     const st = this.store;
     const out: ProjectMeta[] = [];
     for (const k of await keys(st)) {
@@ -104,6 +110,7 @@ export class ProjectStore {
   }
 
   async get(id: string): Promise<ProjectRecord | null> {
+    await this.ready;
     return sanitizeRecord(await get(`p:${id}`, this.st()));
   }
 
@@ -208,7 +215,7 @@ export async function parseProjectFile(text: string): Promise<{ rec: ProjectReco
   } catch {
     throw new Error('no es un archivo de proyecto');
   }
-  if (o?.format !== PROJECT_FILE_FORMAT) throw new Error('no es un archivo de proyecto');
+  if (o?.format !== PROJECT_FILE_FORMAT && o?.format !== LEGACY_FILE_FORMAT) throw new Error('no es un archivo de proyecto');
   const rec = sanitizeRecord(o.project);
   if (!rec) throw new Error('el proyecto está dañado');
   const images = new Map<string, Blob>();

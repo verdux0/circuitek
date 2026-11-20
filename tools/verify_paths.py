@@ -1,11 +1,11 @@
 """
 Checks that the build (base: './' → relative URLs) works both at the root of a domain
-(Cloudflare Pages, Netlify) and under a sub-path (GitHub Pages: /glitch-editor/).
+(Cloudflare Pages, Netlify) and under a sub-path (GitHub Pages: /circuitek/).
 
     npm run build && python tools/verify_paths.py [dist]
 
 Serves `dist` with a plain static server (no SPA fallback, like the real hosts) at
-http://127.0.0.1:<port>/ and http://127.0.0.1:<port>/glitch-editor/, then loads the app in
+http://127.0.0.1:<port>/ and http://127.0.0.1:<port>/circuitek/, then loads the app in
 Chrome at 1400 px and 390 px: no 4xx/5xx, no console errors, every request inside its path,
 lazy chunks (Mediabunny), the inline workers (JPEG encoder) and the bundled fonts working.
 """
@@ -54,7 +54,7 @@ async def main():
     if not (DIST / "index.html").exists():
         sys.exit(f"No hay build en {DIST}: ejecuta npm run build")
     tmp = Path(tempfile.mkdtemp(prefix="ge-paths-"))
-    shutil.copytree(DIST, tmp / "glitch-editor")
+    shutil.copytree(DIST, tmp / "circuitek")
     root_srv, root_port = serve(DIST)
     sub_srv, sub_port = serve(tmp)
     cands = [os.environ.get("GLITCH_CHROME"), "/usr/bin/google-chrome", shutil.which("google-chrome"),
@@ -65,7 +65,7 @@ async def main():
         async with async_playwright() as p:
             b = await p.chromium.launch(executable_path=chrome, args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"])
             await check_site(b, f"http://127.0.0.1:{root_port}/", results)                 # Cloudflare Pages / Netlify
-            await check_site(b, f"http://127.0.0.1:{sub_port}/glitch-editor/", results)    # GitHub Pages
+            await check_site(b, f"http://127.0.0.1:{sub_port}/circuitek/", results)    # GitHub Pages
             await b.close()
     finally:
         root_srv.shutdown()

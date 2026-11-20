@@ -1,5 +1,5 @@
 /** Factory presets, randomizer and variant generator (pure, deterministic given a seed). */
-import { MAX_CABLES, PAIRS, PINS, STAGES, STAGE_IDS, defaultState, findPair, sanitizeState, type Cable, type GlitchState, type Pin } from './model';
+import { MAX_CABLES, PAIRS, PINS, STAGES, STAGE_IDS, defaultState, engageStages, findPair, sanitizeState, type Cable, type GlitchState, type Pin } from './model';
 import { mulberry32, pick, randInt, type Rng } from './prng';
 
 type Partial2 = {
@@ -19,7 +19,7 @@ function make(p: Partial2): GlitchState {
   for (const [id, params] of Object.entries(p.stages ?? {})) {
     Object.assign(s.stages[id as keyof typeof s.stages].p, params);
   }
-  return sanitizeState(s);
+  return sanitizeState(engageStages(s));
 }
 
 export const FACTORY_PRESETS: Array<{ name: string; state: GlitchState }> = [
@@ -67,7 +67,7 @@ export function randomState(seed: number): GlitchState {
       s.stages[id].p[d.id] = randInt(rng, r[0], r[1]);
     }
   }
-  return sanitizeState(s);
+  return sanitizeState(engageStages(s));
 }
 
 /** A nearby mutation of `base`: same idea, different details. */
@@ -99,6 +99,7 @@ export function variantOf(base: GlitchState, seed: number): GlitchState {
     const d = pick(rng, STAGES.find((x) => x.id === id)!.params);
     const r = RANDOM_RANGES[`${id}.${d.id}`] ?? [d.min, d.max];
     s.stages[id].p[d.id] = randInt(rng, r[0], r[1]);
+    s.stages[id].on = true;
   }
   return sanitizeState(s);
 }

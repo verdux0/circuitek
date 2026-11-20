@@ -2,7 +2,7 @@
 
 La app se publica bajo licencia **MIT** (ver `LICENSE`).
 
-glitch-editor no copia ni adapta código de terceros dentro de `src/`: todo lo de abajo se usa **sin modificar**, como dependencia de npm, y se incluye en el build (también en `build:single`) sin CDN. Los algoritmos de dithering (Bayer 4×4 y Floyd–Steinberg, `src/export/dither.ts`) son de dominio público y están escritos desde cero.
+circuitek no copia ni adapta código de terceros dentro de `src/`: todo lo de abajo se usa **sin modificar**, como dependencia de npm, y se incluye en el build (también en `build:single`) sin CDN. Los algoritmos de dithering (Bayer 4×4 y Floyd–Steinberg, `src/export/dither.ts`) son de dominio público y están escritos desde cero.
 
 ## Exportación (GIF / MP4)
 

@@ -58,19 +58,15 @@ export interface Layer {
   fx?: GlitchState;
   /** Animated source (video / GIF): `src` keys a poster bitmap plus the media player. */
   media?: LayerMedia;
-  /** Still layers: "Glitch animado" (the noise changes per frame in GIF / MP4 exports). */
-  animate?: boolean;
 }
 
-/** Whether a layer's noise follows the frame index (media: its own switch; stills: `animate`). */
-export function layerAnimates(l: Layer): boolean {
-  return l.media ? l.media.animate : !!l.animate;
-}
-
+/**
+ * Every layer is animated: its effects follow the frame index of the effects clock (noise and
+ * «Movimiento»), which starts paused on the base state. Older documents stored an `animate`
+ * switch per layer; it is ignored on load.
+ */
 export interface LayerMedia {
   kind: 'video' | 'gif';
-  /** "Glitch animado": the noise seed mixes in the frame index (see media/timing.ts). */
-  animate: boolean;
 }
 
 export interface DocState {
@@ -370,10 +366,9 @@ export function sanitizeDoc(input: unknown): DocState {
       fx: sanitizeState(r.fx),
     };
     if (r.autoName !== undefined) l.autoName = r.autoName !== false;
-    if (r.animate === true) l.animate = true;
     if (r.media && typeof r.media === 'object') {
       const m = r.media as Record<string, unknown>;
-      if (m.kind === 'video' || m.kind === 'gif') l.media = { kind: m.kind, animate: m.animate !== false };
+      if (m.kind === 'video' || m.kind === 'gif') l.media = { kind: m.kind };
     }
     if (r.text && typeof r.text === 'object') {
       const t = r.text as Record<string, unknown>;

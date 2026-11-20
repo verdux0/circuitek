@@ -46,8 +46,8 @@ const OVERSCAN = 6;
 const DEBOUNCE = 120;
 /** Browsing with the arrows stops being "live" after this pause: one undo step. */
 const COMMIT_MS = 700;
-const FAV_KEY = 'glitch-editor.fonts.favs';
-const RECENT_KEY = 'glitch-editor.fonts.recent';
+const FAV_KEY = 'circuitek.fonts.favs';
+const RECENT_KEY = 'circuitek.fonts.recent';
 const EXTRA_CATS: [string, string][] = [
   ['sistema', 'Sistema'],
   ['equipo', 'Del equipo'],

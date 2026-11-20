@@ -1,4 +1,4 @@
-# PLAN — glitch-editor
+# PLAN — circuitek
 
 ## Arquitectura
 

@@ -1,6 +1,6 @@
 /**
- * Clock for animated still layers ("Glitch animado" on an image): drives the preview frame by
- * frame and plugs into the same transport bar as videos and GIFs.
+ * Clock of the effects animation (every layer, stills and media alike): drives the preview
+ * frame by frame; the media bar drives it together with the videos / GIFs (media/timeline.ts).
  *
  * - Stopped by default (frame = undefined → the base state, exactly as without animation).
  * - requestAnimationFrame with a FIXED step (1000 / fps): elapsed time accumulates, every

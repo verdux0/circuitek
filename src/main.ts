@@ -1,3 +1,4 @@
+import './legacy';
 import './styles.css';
 import './fonts';
 import { Engine, MAX_MEGAPIXELS, PREVIEW_MAX, PREVIEW_MAX_ZOOMED } from './engine';
@@ -10,7 +11,7 @@ import { CABLE_COLORS, RewirePanel } from './ui/rewire';
 import { StagesPanel } from './ui/stages';
 import { makeSampleImage } from './sample';
 import { SESSION_VERSION, Session } from './session';
-import { clampSize, cloneDoc, cloneLayer, emptyDoc, fxTargetId, layerAnimates, sanitizeDoc, flipLayer, getLayer, makeLayer, newId, pasteLayer, rotateLayer, textLayerName, type BitmapSource, type DocState, type Layer } from './doc';
+import { clampSize, cloneDoc, cloneLayer, emptyDoc, fxTargetId, sanitizeDoc, flipLayer, getLayer, makeLayer, newId, pasteLayer, rotateLayer, textLayerName, type BitmapSource, type DocState, type Layer } from './doc';
 import { PROJECT_VERSION, ProjectStore, parseProjectFile, type ProjectMeta, type ProjectRecord } from './projects';
 import { ContextMenu, type MenuEntry } from './ui/contextmenu';
 import { ico } from './ui/icons';
@@ -25,18 +26,19 @@ import { hydrateIcons } from './ui/icons';
 import { initCollapsibles } from './ui/collapse';
 import { ExportUI } from './ui/exportui';
 import { GifSearchPanel } from './ui/gifsearch';
-import { AnimClock, type Transport } from './media/animclock';
+import { AnimClock } from './media/animclock';
+import { Timeline } from './media/timeline';
 import { FrameSource } from './export/exporter';
 import { stateAtFrame } from './motion';
 import { MOTION_FPS, MOTION_SECONDS, motionFrames, type MotionMode } from './model';
 import { sanitizeSettings } from './export/settings';
 import { GifPlayer, VideoPlayer, mediaKind, type MediaPlayer } from './media/player';
-import { SPEEDS, formatTime, frameSeed, spokenTime } from './media/timing';
+import { SPEEDS, formatTime, spokenTime } from './media/timing';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 hydrateIcons();
 /** Pre-layers versions kept the last glitch settings here: used as the first layer's effects. */
-const LEGACY_STORE_KEY = 'glitch-editor:state:v1';
+const LEGACY_STORE_KEY = 'circuitek:state:v1';
 
 /* ------------------------------ state ------------------------------ */
 /**
@@ -171,8 +173,9 @@ function replaceDoc(next: DocState): void {
  * bitmap; text rasterized at a power-of-two scale so zooming does not re-raster every step.
  */
 /**
- * Clock of the animated still layers ("Glitch animado" on an image or text): stopped by default;
- * while it shows a frame, those layers render frame N through the same stateAtFrame as exports.
+ * Clock of the effects animation. Every layer is animated (stills, text, videos and GIFs alike);
+ * the clock starts paused on the base state and, while it shows a frame, every layer renders
+ * frame N through the same stateAtFrame as the exports. A GIF's own frames never drive it.
  */
 const anim = new AnimClock();
 let reducedMotionAsk = 0;
@@ -188,8 +191,8 @@ anim.allowMotion = () => {
 const provider: SourceProvider = {
   source(l, pxScale) {
     const r = sourceOf(l, pxScale);
-    // Animated still layers: frame N of the clock (undefined when stopped → the base state).
-    if (r && !l.media && anim.current !== undefined) {
+    // Every layer: frame N of the effects clock (undefined while never played → the base state).
+    if (r) {
       r.noise = anim.current;
       r.loop = anim.loopFrames;
     }
@@ -257,11 +260,37 @@ function requestRender(): void {
 /* ------------------------------ UI components ------------------------------ */
 const toastEl = $('toast');
 let toastTimer = 0;
-function toast(msg: string): void {
+function toast(msg: string, action?: { label: string; run: () => void }): void {
   toastEl.textContent = msg;
+  toastEl.classList.toggle('has-action', !!action);
+  if (action) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'toast-action';
+    b.textContent = action.label;
+    b.addEventListener('click', () => {
+      toastEl.classList.remove('show');
+      action.run();
+    }, { once: true });
+    toastEl.append(' ', b);
+  }
   toastEl.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => toastEl.classList.remove('show'), 2600);
+  // Long enough to reach the button (WCAG 2.2.1); a plain message goes sooner.
+  toastTimer = window.setTimeout(() => toastEl.classList.remove('show'), action ? 8000 : 2600);
+}
+/** «Deshacer» in the toast: undoes the edit just made, only if nothing changed since. */
+function toastUndo(msg: string): void {
+  const after = snapJson();
+  toast(msg, {
+    label: 'Deshacer',
+    run: () => {
+      if (snapJson() === after) {
+        undo();
+        toast('Deshecho');
+      } else toast('Ha habido cambios desde entonces: usa Deshacer (Ctrl+Z) para volver atrás');
+    },
+  });
 }
 
 const effectKnob = new Knob({
@@ -334,6 +363,7 @@ function clampDocSize(w: number, h: number): [number, number] {
   return clampSize(w, h, engine.maxSize, MAX_MEGAPIXELS);
 }
 const layersPanel = new LayersPanel({
+  toastUndo,
   doc: () => doc,
   bitmaps,
   editDoc,
@@ -627,7 +657,7 @@ $('btn-dice').addEventListener('click', () => edit((s) => { s.seed = freshSeed()
 function afterChange(full: boolean, docTouched = false): void {
   if (docTouched) {
     syncPlayers();
-    if (anim.current !== undefined && !doc.layers.some((l) => !l.media && l.animate)) anim.stop();
+    if (anim.current !== undefined && !doc.layers.length) anim.stop();
     session.schedule();
     viewport.sync();
     layersPanel.sync();
@@ -710,13 +740,6 @@ async function openPlayer(blob: Blob, kind: 'video' | 'gif'): Promise<MediaPlaye
   p.onState = () => markMediaUi();
   return p;
 }
-/**
- * "Glitch animado" default: on, as in a real CCD whose read noise differs every frame (a fixed
- * pattern over moving footage looks like dirt on the screen). Off when the system asks for
- * reduced motion: per-frame flicker is exactly what that setting is about.
- */
-const defaultAnimate = (): boolean => !matchMedia('(prefers-reduced-motion: reduce)').matches;
-
 async function addMediaLayer(f: Blob, kind: 'video' | 'gif', name: string): Promise<Layer> {
   const player = await openPlayer(f, kind);
   const key = newId('B');
@@ -724,9 +747,8 @@ async function addMediaLayer(f: Blob, kind: 'video' | 'gif', name: string): Prom
   // The poster is a copy: the player closes its own bitmap when disposed.
   const [w, h] = await registerBitmap(key, await createImageBitmap(player.poster), name);
   blobSources.set(key, f);
-  const layer = insertLayer(key, w, h, name, { kind, animate: defaultAnimate() });
-  void player.play();
-  return layer;
+  // Starts paused, like every layer: ▶ in the media bar plays it with the effects.
+  return insertLayer(key, w, h, name, { kind });
 }
 
 /** Players follow the document: closed when no layer uses them, reopened (undo) from the stored file. */
@@ -759,18 +781,30 @@ async function reopenPlayer(k: string, kind: 'video' | 'gif'): Promise<void> {
     opening.delete(k);
   }
 }
-/** The player the media bar drives: the selected layer's, else the first animated layer's. */
-function mediaTarget(): { layer: Layer; player: Transport } | null {
-  const pick = (l: Layer | undefined) => (l?.media && players.get(l.src) ? { layer: l, player: players.get(l.src)! as Transport } : null);
-  const media = pick(getLayer(doc, doc.active)) ?? pick(getLayer(doc, fxTargetId(doc))) ?? doc.layers.map(pick).find((x) => x) ?? null;
-  if (media) return media;
-  // No video / GIF: the clock of the animated still layers drives the same bar.
-  const still = (l: Layer | undefined) => (l && !l.media && l.animate ? l : undefined);
-  const layer = still(getLayer(doc, fxTargetId(doc))) ?? doc.layers.find((l) => !l.media && l.animate);
+/**
+ * Players for the media bar, primary first: the selected layer's, else the effects target's,
+ * else document order. The primary one gives the bar its time and length.
+ */
+function orderedPlayers(): MediaPlayer[] {
+  const first = [getLayer(doc, doc.active), getLayer(doc, fxTargetId(doc))].find((l) => l?.media && players.has(l.src));
+  const out: MediaPlayer[] = [];
+  const add = (k: string) => {
+    const p = players.get(k);
+    if (p && !out.includes(p)) out.push(p);
+  };
+  if (first) add(first.src);
+  for (const l of doc.layers) if (l.media) add(l.src);
+  return out;
+}
+/** One transport for everything that moves: the effects clock plus every video / GIF. */
+const timeline = new Timeline(anim, orderedPlayers);
+/** What the media bar drives (null without layers): the timeline, and the layer whose effects it shows. */
+function mediaTarget(): { layer: Layer; player: Timeline } | null {
+  const layer = getLayer(doc, fxTargetId(doc)) ?? doc.layers[0];
   if (!layer) return null;
   anim.w = doc.w;
   anim.h = doc.h;
-  return { layer, player: anim };
+  return { layer, player: timeline };
 }
 /** Frames each animated layer at its current frame as a still image (capture / projects). */
 async function freezeMedia(d: DocState): Promise<number> {
@@ -783,8 +817,6 @@ async function freezeMedia(d: DocState): Promise<number> {
       const key = newId('B');
       await registerBitmap(key, bmp, l.name);
       blobSources.set(key, () => bitmapToPng(bitmaps.get(key)!.full as ImageBitmap));
-      // Same pixels as on screen: the frame's noise seed becomes the still's seed.
-      if (l.fx && l.media.animate) l.fx = { ...l.fx, seed: frameSeed(l.fx.seed, p.frame, true) };
       l.src = key;
       n++;
     }
@@ -907,7 +939,7 @@ let clipToken = '';
 let clipPastes = 0;
 let pendingCopyToken = '';
 let pasteSeen = false;
-const CLIP_PREFIX = 'glitch-editor/layer:';
+const CLIP_PREFIX = 'circuitek/layer:';
 
 function isTyping(t: EventTarget | null): boolean {
   return t instanceof HTMLElement && (t.matches('input, textarea, select') || t.isContentEditable);
@@ -1372,12 +1404,9 @@ function syncAnimatedKnobs(): void {
   const l = fxLayer();
   let frame: number | undefined;
   let loop = 0;
-  if (l?.fx && layerAnimates(l)) {
-    if (l.media) frame = players.get(l.src)?.frame;
-    else if (anim.current !== undefined) {
-      frame = anim.current;
-      loop = anim.loopFrames;
-    }
+  if (l?.fx && anim.current !== undefined) {
+    frame = anim.current;
+    loop = anim.loopFrames;
   }
   if (frame === undefined || !l?.fx) {
     if (knobsAnimated) {
@@ -1432,7 +1461,7 @@ mo.targets.addEventListener('change', (e) => {
 /** Panel ← state of the layer the effects editor targets. */
 function syncMotionPanel(): void {
   const l = getLayer(doc, fxTargetId(doc));
-  const on = !!l?.fx && layerAnimates(l);
+  const on = !!l?.fx;
   mo.box.hidden = !on;
   if (!on || !l?.fx) return;
   const m = l.fx.motion;
@@ -1461,7 +1490,6 @@ const mb = {
   loop: $<HTMLButtonElement>('mb-loop'),
   mute: $<HTMLButtonElement>('mb-mute'),
   vol: $<HTMLInputElement>('mb-vol'),
-  anim: $<HTMLInputElement>('mb-anim'),
   note: $('mb-note'),
   kind: $('mb-kind'),
 };
@@ -1474,12 +1502,6 @@ function markMediaUi(): void {
 function toggleMedia(): void {
   const t = mediaTarget();
   if (!t) return;
-  if (t.player.kind === 'anim') {
-    // ▶ / ■: stop goes back to the base state.
-    if (anim.playing) anim.stop();
-    else void anim.play();
-    return;
-  }
   if (t.player.playing) t.player.pause();
   else void t.player.play();
 }
@@ -1493,20 +1515,18 @@ function syncMediaBar(): void {
   const { player: p, layer: l } = t;
   const playing = p.playing;
   const still = p.kind === 'anim';
-  // ▶ / ■ for the still animation (■ = back to the base state), ▶ / ⏸ for media.
-  const icon = playing ? (still ? 'stop' : 'pause') : 'play';
+  const icon = playing ? 'pause' : 'play';
   if (mb.play.dataset.icon !== icon) {
     mb.play.dataset.icon = icon;
     mb.play.innerHTML = ico(icon);
   }
-  mb.play.setAttribute('aria-label', playing ? (still ? 'Parar (vuelve al estado base)' : 'Pausa') : 'Reproducir');
-  mb.play.title = still ? 'Animar el glitch / parar y volver al estado base (Espacio)' : 'Reproducir / pausa (Espacio)';
+  mb.play.setAttribute('aria-label', playing ? 'Pausa' : 'Reproducir');
+  mb.play.title = still ? 'Reproducir / pausar la animación de los efectos (Espacio)' : 'Reproducir / pausar los efectos y el vídeo / GIF (Espacio)';
   mb.play.classList.toggle('pressed', playing);
   mb.bar.dataset.kind = p.kind;
-  if (still && l.fx) anim.configure(l.fx.motion.fps, motionFrames(l.fx.motion));
-  mb.kind.textContent = still
-    ? anim.current === undefined ? 'ANIMACIÓN · PARADA' : `ANIMACIÓN · ${anim.current + 1}/${anim.loopFrames}`
-    : p.kind === 'gif' ? `GIF · ${p.w}×${p.h}` : `VÍDEO · ${p.w}×${p.h}`;
+  if (l.fx) anim.configure(l.fx.motion.fps, motionFrames(l.fx.motion));
+  const fxPos = anim.current === undefined ? 'EN PAUSA' : `${anim.current + 1}/${anim.loopFrames}`;
+  mb.kind.textContent = still ? `ANIMACIÓN · ${fxPos}` : `${p.kind === 'gif' ? 'GIF' : 'VÍDEO'} ${p.w}×${p.h} · EFECTOS ${fxPos}`;
   const d = p.duration;
   mb.seek.max = String(d || 0);
   if (!scrubbing) mb.seek.value = String(p.time);
@@ -1531,7 +1551,6 @@ function syncMediaBar(): void {
   mb.mute.setAttribute('aria-label', p.muted ? 'Activar sonido' : 'Silenciar');
   mb.mute.setAttribute('aria-pressed', String(p.muted));
   mb.vol.value = String(p.muted ? 0 : Math.round(p.volume * 100));
-  mb.anim.checked = layerAnimates(l);
   // Encoder stage (JPEG / pixel sort): skipped while media plays; in the still animation it
   // runs at its own pace (the last encoded frame is held). Say which.
   const enc = !!l.fx && encParams(l.fx) !== null;
@@ -1578,21 +1597,6 @@ mb.vol.addEventListener('input', () => {
   t.player.muted = v === 0;
   markMediaUi();
 });
-mb.anim.addEventListener('change', () => {
-  const t = mediaTarget();
-  if (!t) return;
-  const on = mb.anim.checked;
-  editDoc((d) => {
-    for (const l of d.layers) {
-      if (l.src === t.layer.src && l.media) l.media.animate = on;
-      else if (l.id === t.layer.id && !l.media) {
-        if (on) l.animate = true;
-        else delete l.animate;
-      }
-    }
-  }, 'once');
-  toast(on ? 'Glitch animado: el ruido cambia en cada fotograma' : 'Glitch fijo: el mismo patrón en todos los fotogramas');
-});
 
 /* ------------------------------ misc buttons & keys ------------------------------ */
 const openRewire = (): void => {
@@ -1606,7 +1610,7 @@ $('btn-fx-clear').addEventListener('click', () => {
 });
 
 /* ---- side panel tabs: Capas / Efectos ---- */
-const TAB_KEY = 'glitch-editor:tab';
+const TAB_KEY = 'circuitek:tab';
 function showTab(tab: string, save = true): void {
   if (tab !== 'layers' && tab !== 'fx') tab = 'layers';
   for (const b of document.querySelectorAll<HTMLElement>('.rack-tab')) {
@@ -1655,7 +1659,7 @@ $('btn-rack').addEventListener('click', () => {
 });
 
 /* ------------------------------ theme ------------------------------ */
-const THEME_KEY = 'glitch-editor:theme';
+const THEME_KEY = 'circuitek:theme';
 function applyTheme(t: 'light' | 'dark', save: boolean): void {
   document.documentElement.dataset.theme = t;
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t === 'dark' ? '#161618' : '#e8e6e1');
@@ -1689,23 +1693,8 @@ function syncFxLabel(): void {
   $('fx-target-name').textContent = name;
   $('fx-panel-name').textContent = name;
   $('fx-panel-name').title = l && !doc.active ? 'Ninguna capa seleccionada: se editan los efectos de la imagen principal' : name;
-  const animSwitch = $<HTMLInputElement>('fx-anim');
-  animSwitch.checked = !!l && layerAnimates(l);
   syncMotionPanel();
-  $('fx-anim-hint').textContent = l?.media ? 'ruido distinto en cada fotograma del vídeo' : 'ruido distinto en cada fotograma · habilita GIF / MP4';
 }
-$<HTMLInputElement>('fx-anim').addEventListener('change', (e) => {
-  const on = (e.target as HTMLInputElement).checked;
-  const id = fxTargetId(doc);
-  editDoc((d) => {
-    const l = getLayer(d, id);
-    if (!l) return;
-    if (l.media) l.media.animate = on;
-    else if (on) l.animate = true;
-    else delete l.animate;
-  }, 'once');
-  toast(on ? 'Glitch animado: el ruido cambia en cada fotograma' : 'Glitch fijo');
-});
 /** Resets the layer's effects (nothing connected). */
 function clearLayerFx(id: string): void {
   editDoc((d) => {
@@ -1811,7 +1800,7 @@ window.addEventListener('keydown', (e) => {
   }
   else if (e.key === ' ' && !t.matches('button')) {
     e.preventDefault();
-    // With a video / GIF, Space is play / pause (as in every player); otherwise Capture.
+    // With layers, Space is play / pause (as in every player); otherwise Capture.
     if (mediaTarget()) toggleMedia();
     else void saveProject(true);
   } else if ((e.key === ',' || e.key === '.') && mediaTarget()) {
@@ -1939,13 +1928,22 @@ const exportUi = new ExportUI(
     },
     motion: () => {
       const t = mediaTarget();
-      return t && t.player.kind === 'anim' ? (t.layer.fx?.motion ?? null) : null;
+      return t?.layer.fx?.motion ?? null;
     },
   },
   $<HTMLButtonElement>('btn-export'),
   $<HTMLButtonElement>('btn-export-menu'),
 );
 $('progress-cancel').addEventListener('click', () => exportUi.cancel());
+/** Narrow screens: the export button lives in a fixed dock, not inside the closed bottom panel. */
+{
+  const split = document.querySelector<HTMLElement>('.split-btn')!;
+  const home = split.parentElement!;
+  const narrow = matchMedia('(max-width: 1080px)');
+  const place = () => (narrow.matches ? $('export-dock') : home).append(split);
+  narrow.addEventListener('change', place);
+  place();
+}
 
 /* ------------------------------ GIF search (GifCities · Internet Archive) ------------------------------ */
 // Nothing is requested until the user searches inside the panel.
@@ -2013,7 +2011,7 @@ async function hydrate(d: DocState, blobFor: (key: string) => Promise<Blob | und
         players.set(l.src, p);
         if (!bitmaps.has(l.src)) await registerBitmap(l.src, await createImageBitmap(p.poster), l.name);
         blobSources.set(l.src, b);
-        void p.play();
+        // Paused, like every layer when it appears (▶ plays it with the effects).
       } catch (err) {
         toast(`No se pudo reabrir «${l.name}»: ${(err as Error).message}`);
         missing++;
@@ -2182,23 +2180,25 @@ Object.assign(window, {
         input.dispose();
       }
     },
-    /** Transport state of the media bar's player (null without video / GIF). */
+    /** Transport state of the media bar (null without layers); `fx` = the effects clock. */
     media: () => {
       const t = mediaTarget();
       if (!t) return null;
       const p = t.player;
+      const pl = orderedPlayers()[0];
       return {
-        kind: p.kind, decoder: p instanceof GifPlayer ? p.decoder : 'video', w: p.w, h: p.h, duration: p.duration, time: p.time,
+        kind: p.kind, decoder: pl instanceof GifPlayer ? pl.decoder : pl ? 'video' : 'anim', w: p.w, h: p.h, duration: p.duration, time: p.time,
         frame: p.frame, fps: p.fps, stamp: p.stamp, playing: p.playing, speed: p.speed, loop: p.loop, volume: p.volume,
-        muted: p.muted, hasAudio: p.hasAudio, animate: !!t.layer.media?.animate,
+        muted: p.muted, hasAudio: p.hasAudio, fx: { current: anim.current, playing: anim.playing, loopFrames: anim.loopFrames },
+        players: orderedPlayers().map((x) => ({ kind: x.kind, playing: x.playing, frame: x.frame })),
       };
     },
     /** Preview renders since load (fps = delta / seconds). */
     presents: () => presents,
     /** Renders one "new frame" now (texture re-upload + every pass) and waits for the GPU: per-frame cost. */
     renderOnce: () => {
-      const t = mediaTarget();
-      if (t) (t.player as { stamp: number }).stamp++;
+      const pl = orderedPlayers()[0];
+      if (pl) (pl as { stamp: number }).stamp++;
       engine.renderPreview(doc, null, ctx, false);
       const gl = engine.gl.gl;
       gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));

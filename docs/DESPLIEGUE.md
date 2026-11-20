@@ -1,6 +1,6 @@
-# Despliegue de glitch-editor
+# Despliegue de circuitek
 
-glitch-editor es una web **estática**: `npm run build` genera la carpeta `dist/` (un `index.html` y la carpeta `assets/`), y cualquier hosting de archivos estáticos la sirve. No hace falta servidor, base de datos ni variables secretas.
+circuitek es una web **estática**: `npm run build` genera la carpeta `dist/` (un `index.html` y la carpeta `assets/`), y cualquier hosting de archivos estáticos la sirve. No hace falta servidor, base de datos ni variables secretas.
 
 Hay tres formas de publicarla. Se pueden usar a la vez: cada una da su propia dirección.
 
@@ -8,7 +8,7 @@ Hay tres formas de publicarla. Se pueden usar a la vez: cada una da su propia di
 |---|---|---|---|
 | [A. Cloudflare Pages](#a-cloudflare-pages-conectado-a-github) | `https://<proyecto>.pages.dev/` | Sí | Cloudflare (gratis) |
 | [B. Netlify Drop](#b-netlify-drop-arrastrar-y-soltar) | `https://<nombre-aleatorio>.netlify.app/` | No: se arrastra a mano cada vez | No para probar; sí para conservarla |
-| [C. GitHub Pages](#c-github-pages-ya-configurado) | `https://verdux0.github.io/glitch-editor/` | Sí | La de GitHub (ya la tienes) |
+| [C. GitHub Pages](#c-github-pages-ya-configurado) | `https://verdux0.github.io/circuitek/` | Sí | La de GitHub (ya la tienes) |
 
 > Fuentes consultadas el **18-11-2026**. Lo marcado como **(no comprobado)** no he podido verificarlo en la documentación oficial o necesita tu cuenta. No he ejecutado ningún despliegue ni creado cuentas: todos los pasos los haces tú.
 
@@ -16,7 +16,7 @@ Hay tres formas de publicarla. Se pueden usar a la vez: cada una da su propia di
 
 ## Antes de empezar: qué hay en el repositorio para esto
 
-- **`vite.config.ts` → `base: './'`**: todas las rutas del build son relativas, así que la misma carpeta `dist/` funciona en la raíz de un dominio (Cloudflare, Netlify) y en una subruta (GitHub Pages, `/glitch-editor/`). Comprobado con `tools/verify_paths.py`, que sirve `dist` de las dos formas con un servidor estático: sin errores 404 ni de consola, a 1400 px y a 390 px.
+- **`vite.config.ts` → `base: './'`**: todas las rutas del build son relativas, así que la misma carpeta `dist/` funciona en la raíz de un dominio (Cloudflare, Netlify) y en una subruta (GitHub Pages, `/circuitek/`). Comprobado con `tools/verify_paths.py`, que sirve `dist` de las dos formas con un servidor estático: sin errores 404 ni de consola, a 1400 px y a 390 px.
 - **`public/_headers`**: Vite lo copia a `dist/_headers`. Lo leen **Cloudflare Pages y Netlify**; **GitHub Pages lo ignora**, porque no admite cabeceras propias. Contiene:
   - `/assets/*` → `Cache-Control: public, max-age=31536000, immutable`. Los archivos de `assets/` llevan un hash en el nombre (`index-bHfpkcEv.js`), así que cada build genera nombres nuevos y se pueden guardar en caché un año sin quedarse viejos.
   - `/` e `/index.html` → `Cache-Control: no-cache`: la página se revalida siempre y un despliegue nuevo se ve al recargar.
@@ -38,13 +38,13 @@ Cada push a `main` publica una versión nueva; las otras ramas generan direccion
 1. Crea una cuenta gratuita en <https://dash.cloudflare.com/sign-up> si no tienes (no hace falta un dominio propio).
 2. En el panel de Cloudflare, abre **Workers & Pages**.
 3. Pulsa **Create application** → pestaña **Pages** → **Connect to Git**.
-4. Elige **GitHub** y autoriza a Cloudflare. Puedes darle acceso solo al repositorio `glitch-editor`.
-5. Selecciona `verdux0/glitch-editor` y pulsa **Install & Authorize** y luego **Begin setup**.
+4. Elige **GitHub** y autoriza a Cloudflare. Puedes darle acceso solo al repositorio `circuitek`.
+5. Selecciona `verdux0/circuitek` y pulsa **Install & Authorize** y luego **Begin setup**.
 6. En **Set up builds and deployments**, rellena:
 
    | Campo | Valor |
    |---|---|
-   | Project name | `glitch-editor` (da la dirección `glitch-editor.pages.dev`; si está cogido, elige otro y cambia también `name` en `wrangler.toml`) |
+   | Project name | `circuitek` (da la dirección `circuitek.pages.dev`; si está cogido, elige otro y cambia también `name` en `wrangler.toml`) |
    | Production branch | `main` |
    | Framework preset | `None` (o `Vite`, que rellena lo mismo) |
    | Build command | `npm run build` |
@@ -106,18 +106,18 @@ Solo el trabajo de despliegue tiene permiso de escribir en Pages.
 
 ### Activarlo (una sola vez)
 
-1. En GitHub, abre el repositorio `verdux0/glitch-editor`.
+1. En GitHub, abre el repositorio `verdux0/circuitek`.
 2. Pestaña **Settings**. Si no la ves, ábrela desde el menú **…**.
 3. En la barra lateral, sección *Code, planning, and automation*, pulsa **Pages**.
 4. En **Build and deployment**, pon **Source** en **GitHub Actions**. No elijas ninguna plantilla: el workflow ya existe.
 5. Vuelve a lanzar el despliegue: pestaña **Actions** → **Deploy to GitHub Pages** → la última ejecución → **Re-run all jobs** (o haz cualquier push a `main`).
-6. Al terminar, la app está en **<https://verdux0.github.io/glitch-editor/>**.
+6. Al terminar, la app está en **<https://verdux0.github.io/circuitek/>**.
 
 El primer intento, del 18-11-2026, compiló y pasó los tests, pero falló en el paso `configure-pages` precisamente porque Pages aún no estaba activado.
 
 ### Detalles
 
-- La dirección lleva la subruta `/glitch-editor/`. Funciona gracias a `base: './'`, comprobado con `tools/verify_paths.py`.
+- La dirección lleva la subruta `/circuitek/`. Funciona gracias a `base: './'`, comprobado con `tools/verify_paths.py`.
 - GitHub Pages **no aplica `_headers`**: usa su propia política de caché. La app funciona igual.
 - **Límites:** sitio publicado de 1 GB como máximo, 100 GB al mes de ancho de banda (límite flexible) y 10 minutos por despliegue. El límite de 10 builds por hora no se aplica a despliegues con un workflow propio como este.
 

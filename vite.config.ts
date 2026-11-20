@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => ({
   publicDir: mode === 'single' ? false : 'public',
   plugins: [
     ...(mode === 'single' ? [viteSingleFile()] : []),
-    ...(mode === 'phone' ? [basicSsl({ name: 'glitch-editor-dev' })] : []),
+    ...(mode === 'phone' ? [basicSsl({ name: 'circuitek-dev' })] : []),
   ],
   build: {
     outDir: mode === 'single' ? 'dist-single' : 'dist',

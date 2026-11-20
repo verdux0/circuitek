@@ -1,6 +1,6 @@
 import { COMP_FRAG, FRAG, LAYER_FRAG, LAYER_VERT, VERT } from './shaders';
 import { buildGpuPasses, encParams, encSeed, type EncParams, type GlitchState, type GpuPass } from '../model';
-import { BLENDS, layerAnimates, layerMatrix, type DocState, type Layer } from '../doc';
+import { BLENDS, layerMatrix, type DocState, type Layer } from '../doc';
 import { stateAtFrame } from '../motion';
 
 /**
@@ -73,8 +73,9 @@ export interface SourceRef {
   /** Skip the encoder stage (JPEG / pixel sort) in this render: the media is playing. */
   liveOnly?: boolean;
   /**
-   * Frame index for the noise seed of animated layers ("Glitch animado"), when it differs from
-   * `frame` (exports: output frame i, also for still layers). Defaults to `frame`.
+   * Frame of the effects animation (noise and «Movimiento»), the same for every layer:
+   * the effects clock in the preview, output frame i in exports. Undefined = base state.
+   * Independent of `frame` (a GIF's own frame only picks its pixels).
    */
   noise?: number;
   /** Loop length (frames) the noise / motion of this render is periodic with. */
@@ -271,7 +272,6 @@ export class GLRenderer {
     return s.tex;
   }
 
-  /** Effects of a layer for this frame: animated media mixes the frame index into the seed. */
   /** One reusable result object per layer: an animated preview allocates no new state per frame. */
   private scratch = new Map<string, GlitchState>();
 
@@ -279,7 +279,7 @@ export class GLRenderer {
   private frameFx(l: Layer, ref: SourceRef): GlitchState {
     let out = this.scratch.get(l.id);
     if (!out) this.scratch.set(l.id, (out = {} as GlitchState));
-    return stateAtFrame(l.fx!, ref.noise ?? ref.frame, ref.loop ?? 0, layerAnimates(l), out);
+    return stateAtFrame(l.fx!, ref.noise, ref.loop ?? 0, true, out);
   }
 
   private dropSource(key: string): void {
@@ -392,7 +392,7 @@ export class GLRenderer {
   /* ------------------------------ per-layer cache ------------------------------ */
 
   private cacheKey(l: Layer, ref: SourceRef, job: RenderJob): string {
-    return JSON.stringify([ref.key, ref.frame ?? null, ref.stamp ?? null, ref.noise ?? null, layerAnimates(l), l.w, l.h, l.x, l.y, l.scaleX, l.scaleY, l.rotation, l.flipX, l.flipY, l.fx, job.w, job.h, job.doc.w, job.doc.h]);
+    return JSON.stringify([ref.key, ref.frame ?? null, ref.stamp ?? null, ref.noise ?? null, l.w, l.h, l.x, l.y, l.scaleX, l.scaleY, l.rotation, l.flipX, l.flipY, l.fx, job.w, job.h, job.doc.w, job.doc.h]);
   }
 
   /**

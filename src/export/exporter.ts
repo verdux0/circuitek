@@ -47,7 +47,7 @@ const check = (signal: AbortSignal): void => {
 export interface DocInfo {
   /** Has video / GIF layers. */
   media: boolean;
-  /** Some still layer has "Glitch animado" on (a generated animation). */
+  /** Some visible still layer has effects (every layer is animated: a generated animation). */
   generated: boolean;
   /** Longest media duration (s), 0 without media. */
   duration: number;
@@ -58,7 +58,7 @@ export function docInfo(doc: DocState, players: Map<string, MediaPlayer>): DocIn
   const media = vis.filter((l) => l.media && players.has(l.src));
   return {
     media: media.length > 0,
-    generated: vis.some((l) => !l.media && l.animate && !!l.fx),
+    generated: vis.some((l) => !l.media && !!l.fx),
     duration: Math.max(0, ...media.map((l) => players.get(l.src)!.duration || 0)),
   };
 }
@@ -275,7 +275,7 @@ async function bestLoopCut(src: FrameSource, dur: number, fps: number, signal: A
 
 export async function exportGif(host: ExportHost, doc: DocState, s: ExportSettings, sink: SaveSink, progress: Progress, signal: AbortSignal): Promise<{ w: number; h: number; frames: number; where: string; fps: number }> {
   const info = docInfo(doc, host.players);
-  if (!info.media && !info.generated) throw new Error('No hay nada animado: activa «Glitch animado» o importa un vídeo / GIF');
+  if (!info.media && !info.generated) throw new Error('No hay nada animado: añade una capa con efectos o importa un vídeo / GIF');
   let plan = planGif(doc, info, s);
   const src = new FrameSource(host, doc, plan.w, plan.h);
   const worker = new GifWorker() as Worker;
@@ -437,7 +437,7 @@ export async function exportVideo(
 ): Promise<{ w: number; h: number; frames: number; where: string; audio: string; container: string }> {
   if (!caps.container) throw new Error(caps.reason);
   const info = docInfo(doc, host.players);
-  if (!info.media && !info.generated) throw new Error('No hay nada animado: activa «Glitch animado» o importa un vídeo / GIF');
+  if (!info.media && !info.generated) throw new Error('No hay nada animado: añade una capa con efectos o importa un vídeo / GIF');
   const mb = await import('mediabunny');
   const plan = planVideo(doc, info, s);
   const webm = caps.container === 'webm';

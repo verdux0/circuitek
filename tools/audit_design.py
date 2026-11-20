@@ -133,7 +133,7 @@ async def run(browser, url):
             key = f"{'movil-390' if mobile else 'escritorio-1400'}-{theme}"
             vp = {"width": 390, "height": 844} if mobile else {"width": 1400, "height": 1000}
             ctx = await browser.new_context(viewport=vp, device_scale_factor=2 if mobile else 1, is_mobile=mobile, has_touch=mobile, color_scheme=theme)
-            await ctx.add_init_script(f"try {{ localStorage.setItem('glitch-editor:theme', '{theme}') }} catch {{}}")
+            await ctx.add_init_script(f"try {{ localStorage.setItem('circuitek:theme', '{theme}') }} catch {{}}")
             pg = await ctx.new_page()
             await pg.goto(url); await pg.wait_for_load_state("networkidle")
             await setup(pg, mobile)

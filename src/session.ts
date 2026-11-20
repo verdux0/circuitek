@@ -8,6 +8,7 @@
  */
 import { createStore, del, get, keys, set, type UseStore } from 'idb-keyval';
 import type { DocState } from './doc';
+import { migrateIdb } from './legacy';
 
 export interface SavedShot {
   doc: DocState;
@@ -51,7 +52,7 @@ export class Session {
     private blobFor: (key: string) => BlobSource | undefined,
   ) {
     try {
-      this.store = createStore('glitch-editor', 'session');
+      this.store = createStore('circuitek', 'session');
     } catch {
       this.store = null;
     }
@@ -121,6 +122,7 @@ export class Session {
   async load(): Promise<Restored | null> {
     if (!this.store) return null;
     const st = this.store;
+    await migrateIdb('circuitek', 'session', st);
     const data = (await get('session', st)) as SessionData | undefined;
     const all = (await keys(st)).map(String);
     const blobs = new Map<string, Blob>();

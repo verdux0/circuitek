@@ -130,8 +130,8 @@ async def run(browser, url, out: Path, check):
     check("↓ aplica cada fuente en directo y al parar deja un solo paso de deshacer", len(set(seen)) == 3 and hist1 - hist0 == 2, f"{' → '.join(seen)} · historial +{hist1 - hist0} (clic + recorrido)")
     target = seen[-1]
     await pg.keyboard.press("Shift+Enter")
-    favs = await pg.evaluate("localStorage.getItem('glitch-editor.fonts.favs')")
-    rec = await pg.evaluate("localStorage.getItem('glitch-editor.fonts.recent')")
+    favs = await pg.evaluate("localStorage.getItem('circuitek.fonts.favs')")
+    rec = await pg.evaluate("localStorage.getItem('circuitek.fonts.recent')")
     fid = (await pg.evaluate("window.__glitch.getDoc().layers.find(x => x.text).text")).get("fontId")
     check("Mayús+Intro marca favorita; favoritas y recientes en localStorage", fid in (favs or "") and fid in (rec or ""), f"{target}: {favs} · {rec}")
     await pg.select_option(".fp-cat", "all")

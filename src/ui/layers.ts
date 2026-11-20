@@ -35,6 +35,8 @@ export interface LayersHost {
   pickFiles(): void;
   clampDocSize(w: number, h: number): [number, number];
   toast(msg: string): void;
+  /** Toast with a «Deshacer» button that undoes the edit just made (touch has no Ctrl+Z). */
+  toastUndo(msg: string): void;
   /** Text layers. */
   editText(id: string, patch: Partial<TextProps>, phase: Phase): void;
   /** Puts the (persistent) font list into the text panel. */
@@ -150,6 +152,7 @@ export class LayersPanel {
       this.host.rowMenu(id, r.left, r.bottom);
       return;
     }
+    if (btn?.dataset.rowAct === 'delete' && row) return this.deleteLayer(row.dataset.id!);
     if (btn?.dataset.rowAct && row) {
       const id = row.dataset.id!;
       const key = btn.dataset.rowAct === 'eye' ? 'visible' : 'locked';
@@ -206,13 +209,21 @@ export class LayersPanel {
 
   deleteActive(notify = true): void {
     const l = this.active();
+    if (l) this.deleteLayer(l.id, notify);
+  }
+
+  /** Deletes a layer at once; the toast offers «Deshacer» (no confirmation dialog to dismiss). */
+  deleteLayer(id: string, notify = true): void {
+    const d0 = this.host.doc();
+    const l = getLayer(d0, id);
     if (!l) return;
+    const wasActive = d0.active === id;
     this.host.editDoc((d) => {
-      const i = d.layers.findIndex((x) => x.id === l.id);
+      const i = d.layers.findIndex((x) => x.id === id);
       d.layers.splice(i, 1);
-      d.active = d.layers[Math.min(i, d.layers.length - 1)]?.id ?? null;
+      if (wasActive) d.active = d.layers[Math.min(i, d.layers.length - 1)]?.id ?? null;
     }, 'once');
-    if (notify) this.host.toast(`Capa «${l.name}» eliminada (Ctrl+Z para recuperarla)`);
+    if (notify) this.host.toastUndo(`Capa «${l.name}» eliminada`);
   }
 
   duplicateActive(): void {
@@ -399,6 +410,7 @@ export class LayersPanel {
           <span class="layer-name" title="Doble clic para renombrar (F2)">${layerHasFx(l) ? `<b class="fx-badge" title="Tiene efectos">${ico('fx')}</b>` : ''}${escapeHtml(l.name)}${l.blend !== 'source-over' || l.opacity < 1 ? `<small>${l.opacity < 1 ? Math.round(l.opacity * 100) + '%' : ''} ${l.blend !== 'source-over' ? BLENDS.find((b) => b[0] === l.blend)![1] : ''}</small>` : ''}</span>
           <button class="layer-tog${l.visible ? '' : ' off'}" data-row-act="eye" aria-label="${l.visible ? 'Ocultar' : 'Mostrar'} capa" title="${l.visible ? 'Ocultar' : 'Mostrar'}">${ico(l.visible ? 'eye' : 'eye-off')}</button>
           <button class="layer-tog${l.locked ? ' on' : ''}" data-row-act="lock" aria-label="${l.locked ? 'Desbloquear' : 'Bloquear'} capa" title="${l.locked ? 'Desbloquear' : 'Bloquear (no se mueve en el visor)'}">${ico(l.locked ? 'lock' : 'unlock')}</button>
+          <button class="layer-tog layer-del" data-row-act="delete" aria-label="Eliminar capa ${escapeHtml(l.name)}" title="Eliminar capa (Supr · se puede deshacer)">${ico('trash')}</button>
           <button class="layer-tog" data-row-act="menu" aria-label="Menú de la capa" aria-haspopup="menu" title="Opciones de la capa (o clic derecho)">${ico('menu')}</button>
         </li>`,
         )
