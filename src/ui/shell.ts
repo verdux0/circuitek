@@ -11,6 +11,7 @@ const PANELS: Omit<PanelDef, 'mount'>[] = [
   { id: 'motion', title: 'Movimiento', icon: 'play' },
   { id: 'stages', title: 'Etapas', icon: 'chip' },
   { id: 'layers', title: 'Capas', icon: 'layers' },
+  { id: 'properties', title: 'Propiedades', icon: 'contain' },
   { id: 'projects', title: 'Proyectos', icon: 'save' },
 ];
 

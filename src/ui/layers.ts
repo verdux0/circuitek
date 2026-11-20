@@ -1,6 +1,9 @@
 /**
- * Layers panel: sortable stack (SortableJS), properties of the active layer and
- * canvas (document) operations. All changes go through host.editDoc so they are undoable.
+ * Two panels over the same layer state (Photopea reference, sections 6 and 7):
+ *  - Capas (`el`): blend mode and opacity of the selected layer, the sortable stack (SortableJS)
+ *    and the bottom action row (effects, duplicate, new text / image layer, delete).
+ *  - Propiedades (`propsEl`): blending options, transform and text of the selected layer.
+ * Neither knows where it is docked. All changes go through host.editDoc (undoable).
  */
 import Sortable from 'sortablejs';
 import {
@@ -53,10 +56,16 @@ export interface LayersHost {
   pickFontFile(): void;
   /** Menu of a layer row (⋯ button or right click), at a screen point. */
   rowMenu(id: string, clientX: number, clientY: number): void;
+  /** Shows the effects panel (bottom row «fx» button). */
+  showEffects(): void;
 }
+
+const blendOptions = (): string => BLENDS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('');
 
 export class LayersPanel {
   readonly el = document.createElement('section');
+  /** The Propiedades panel (selected layer). */
+  readonly propsEl = document.createElement('section');
   private list: HTMLOListElement;
   private props: HTMLElement;
   private structKey = '';
@@ -66,18 +75,26 @@ export class LayersPanel {
   private renaming: string | null = null;
 
   constructor(private host: LayersHost) {
-    this.el.className = 'module layers';
+    this.el.className = 'layers';
     this.el.innerHTML = `
-      <div class="module-head">
-        <h3>${ico('layers')} <span class="layer-count">Sin capas</span></h3>
-        <button class="hw-btn icon-sm" data-act="add-text" aria-label="Añadir capa de texto" title="Añadir capa de texto (T)">${addIco('type')}</button>
-        <button class="hw-btn icon-sm" data-act="add" aria-label="Añadir imágenes" title="Añadir imágenes como capas (también arrastrar o Ctrl+V)">${addIco('image')}</button>
+      <div class="layers-top">
+        <select data-prop="blend" aria-label="Modo de fusión de la capa">${blendOptions()}</select>
+        <label class="layers-opacity"><span>Opacidad:</span><input type="number" data-prop="opacity" min="0" max="100" step="1" inputmode="numeric" aria-label="Opacidad de la capa (%)"><span class="win-unit">%</span></label>
       </div>
       <ol class="layer-list" aria-label="Capas (la de arriba se dibuja encima)"></ol>
       <p class="layer-empty">Sin capas. Importa una o varias fotos: cada una será una capa.</p>
-      <div class="layer-props"></div>`;
+      <div class="layers-foot" role="toolbar" aria-label="Acciones de capa">
+        <span class="layer-count" aria-live="polite">Sin capas</span>
+        <button class="layers-act" data-act="show-fx" aria-label="Efectos de la capa" title="Efectos de la capa">${ico('fx')}</button>
+        <button class="layers-act" data-act="duplicate" aria-label="Duplicar capa (Ctrl+J)" title="Duplicar capa (Ctrl+J)">${ico('duplicate')}</button>
+        <button class="layers-act" data-act="add-text" aria-label="Nueva capa de texto (T)" title="Nueva capa de texto (T)">${addIco('type')}</button>
+        <button class="layers-act" data-act="add" aria-label="Nueva capa desde imagen (I)" title="Nueva capa: añadir imágenes, GIF o vídeos (I · también arrastrar o Ctrl+V)">${addIco('image')}</button>
+        <button class="layers-act danger" data-act="delete" aria-label="Eliminar capa (Supr · se puede deshacer)" title="Eliminar capa (Supr · se puede deshacer)">${ico('trash')}</button>
+      </div>`;
     this.list = this.el.querySelector('.layer-list')!;
-    this.props = this.el.querySelector('.layer-props')!;
+    this.propsEl.className = 'layer-props-panel';
+    this.propsEl.innerHTML = '<p class="layer-empty">Sin capas.</p><div class="layer-props"></div>';
+    this.props = this.propsEl.querySelector('.layer-props')!;
 
     Sortable.create(this.list, {
       animation: 140,
@@ -98,7 +115,11 @@ export class LayersPanel {
       },
     });
 
-    this.el.addEventListener('click', (e) => this.onClick(e));
+    for (const root of [this.el, this.propsEl]) {
+      root.addEventListener('click', (e) => this.onClick(e));
+      root.addEventListener('input', (e) => this.onInput(e as InputEvent, 'live'));
+      root.addEventListener('change', (e) => this.onInput(e, 'end'));
+    }
     // Right click on a row: same menu as the ⋯ button (instead of the browser's).
     this.list.addEventListener('contextmenu', (e) => {
       const row = (e.target as HTMLElement).closest<HTMLElement>('.layer-row');
@@ -112,8 +133,6 @@ export class LayersPanel {
       const row = name?.closest<HTMLElement>('.layer-row');
       if (row) this.startRename(row.dataset.id!);
     });
-    this.el.addEventListener('input', (e) => this.onInput(e as InputEvent, 'live'));
-    this.el.addEventListener('change', (e) => this.onInput(e, 'end'));
   }
 
   private active(): Layer | undefined {
@@ -127,6 +146,7 @@ export class LayersPanel {
     const row = t.closest<HTMLElement>('.layer-row');
     if (btn?.dataset.act === 'add') return this.host.pickFiles();
     if (btn?.dataset.act === 'add-text') return this.host.addTextLayer();
+    if (btn?.dataset.act === 'show-fx') return this.host.showEffects();
     const tb = t.closest<HTMLElement>('[data-font], [data-text-toggle], [data-align]');
     if (tb) return this.textButton(tb);
     if (btn?.dataset.rowAct === 'menu' && row) {
@@ -330,7 +350,7 @@ export class LayersPanel {
       const x = getLayer(d, l.id)!;
       const v = Number(t.value);
       switch (prop) {
-        case 'opacity': x.opacity = Math.max(0, Math.min(1, v / 100)); break;
+        case 'opacity': if (t.value !== '' && Number.isFinite(v)) x.opacity = Math.max(0, Math.min(1, v / 100)); break;
         case 'blend': x.blend = t.value as Layer['blend']; break;
         case 'scale': {
           if (!(v > 0)) break;
@@ -366,6 +386,7 @@ export class LayersPanel {
     // the pointer survives a click (double click to rename, drag the grip right after).
     const key = JSON.stringify(d.layers.map((l) => [l.id, l.src, l.name, l.visible, l.locked, l.blend, Math.round(l.opacity * 100), layerHasFx(l)]));
     this.el.classList.toggle('no-layers', d.layers.length === 0);
+    this.propsEl.classList.toggle('no-layers', d.layers.length === 0);
     const n = d.layers.length;
     this.el.querySelector('.layer-count')!.textContent = n ? `${n} capa${n === 1 ? '' : 's'}` : 'Sin capas';
     if (key !== this.structKey && !this.renaming) {
@@ -375,13 +396,12 @@ export class LayersPanel {
         .map(
           (l) => `
         <li class="layer-row${l.visible ? '' : ' hidden-layer'}" data-id="${l.id}">
-          <span class="layer-grip" title="Arrastra para reordenar">${ico('grip')}</span>
+          <button class="layer-tog${l.visible ? '' : ' off'}" data-row-act="eye" aria-label="${l.visible ? 'Ocultar' : 'Mostrar'} capa" title="${l.visible ? 'Ocultar' : 'Mostrar'}">${ico(l.visible ? 'eye' : 'eye-off')}</button>
           <img class="layer-thumb" src="${this.thumb(l.src)}" alt="" draggable="false">
           <span class="layer-name" title="Doble clic para renombrar (F2)">${layerHasFx(l) ? `<b class="fx-badge" title="Tiene efectos">${ico('fx')}</b>` : ''}${escapeHtml(l.name)}${l.blend !== 'source-over' || l.opacity < 1 ? `<small>${l.opacity < 1 ? Math.round(l.opacity * 100) + '%' : ''} ${l.blend !== 'source-over' ? BLENDS.find((b) => b[0] === l.blend)![1] : ''}</small>` : ''}</span>
-          <button class="layer-tog${l.visible ? '' : ' off'}" data-row-act="eye" aria-label="${l.visible ? 'Ocultar' : 'Mostrar'} capa" title="${l.visible ? 'Ocultar' : 'Mostrar'}">${ico(l.visible ? 'eye' : 'eye-off')}</button>
           <button class="layer-tog${l.locked ? ' on' : ''}" data-row-act="lock" aria-label="${l.locked ? 'Desbloquear' : 'Bloquear'} capa" title="${l.locked ? 'Desbloquear' : 'Bloquear (no se mueve en el visor)'}">${ico(l.locked ? 'lock' : 'unlock')}</button>
-          <button class="layer-tog layer-del" data-row-act="delete" aria-label="Eliminar capa ${escapeHtml(l.name)}" title="Eliminar capa (Supr · se puede deshacer)">${ico('trash')}</button>
           <button class="layer-tog" data-row-act="menu" aria-label="Menú de la capa" aria-haspopup="menu" title="Opciones de la capa (o clic derecho)">${ico('menu')}</button>
+          <span class="layer-grip" title="Arrastra para reordenar" aria-hidden="true">${ico('grip')}</span>
         </li>`,
         )
         .join('');
@@ -410,19 +430,17 @@ export class LayersPanel {
       const slot = this.props.querySelector<HTMLElement>('[data-font-slot]');
       if (slot) this.host.mountFontList(slot);
     });
-    this.props.innerHTML = `${l.text ? this.textBlock(l.text) : ''}
+    this.props.innerHTML = `
+      <details class="sub" data-sub="blend" open>
+      <summary>${ico('chevron', 'sub-chev')}${ico('layers')} Opciones de fusión</summary>
+      <label class="prop prop-wide"><span>Modo de fusión:</span><select data-prop="blend">${blendOptions()}</select></label>
+      <div class="prop prop-wide prop-slider"><span>Opacidad:</span><input type="range" data-prop="opacity" min="0" max="100" step="1" aria-label="Opacidad"><input type="number" data-prop="opacity" min="0" max="100" step="1" inputmode="numeric" aria-label="Opacidad (%)"><span class="win-unit">%</span></div>
+      </details>
+      ${l.text ? this.textBlock(l.text) : ''}
       <details class="sub" data-sub="transform" open>
-      <summary>${ico('chevron', 'sub-chev')}${ico('contain')} Transformar y mezclar</summary>
-      <div class="prop-row">
-        <label class="prop prop-wide"><span>OPACIDAD</span><input type="range" data-prop="opacity" min="0" max="100" step="1"><output data-out="opacity"></output></label>
-      </div>
-      <div class="prop-row">
-        <label class="prop prop-wide"><span>FUSIÓN</span><select data-prop="blend">${BLENDS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
-      </div>
-      <div class="prop-row">
-        <label class="prop prop-wide"><span>ESCALA %</span><input type="number" data-prop="scale" min="1" step="1"></label>
-      </div>
-      <div class="btn-grid btn-grid-6">
+      <summary>${ico('chevron', 'sub-chev')}${ico('contain')} Transformar</summary>
+      <label class="prop prop-wide"><span>Escala:</span><input type="number" data-prop="scale" min="1" step="1"><span class="win-unit">%</span></label>
+      <div class="btn-grid btn-grid-7">
         <button class="hw-btn icon-sm" data-act="flip-h" aria-label="Espejo horizontal (H)" title="Espejo horizontal (H)">${ico('flip-h')}</button>
         <button class="hw-btn icon-sm" data-act="flip-v" aria-label="Espejo vertical (Shift+H)" title="Espejo vertical (Shift+H)">${ico('flip-v')}</button>
         <button class="hw-btn icon-sm" data-act="reset" aria-label="Quitar todas las transformaciones" title="Quitar todas las transformaciones">${ico('reset')}</button>
@@ -430,11 +448,6 @@ export class LayersPanel {
         <button class="hw-btn icon-sm" data-act="fit" aria-label="Encajar entera en el lienzo" title="Encajar entera en el lienzo">${ico('contain')}</button>
         <button class="hw-btn icon-sm" data-act="fill" aria-label="Rellenar el lienzo" title="Rellenar el lienzo">${ico('cover')}</button>
         <button class="hw-btn icon-sm" data-act="center" aria-label="Centrar en el lienzo" title="Centrar en el lienzo">${ico('center')}</button>
-        <button class="hw-btn icon-sm" data-act="up" aria-label="Subir una posición" title="Subir una posición">${ico('up')}</button>
-        <button class="hw-btn icon-sm" data-act="down" aria-label="Bajar una posición" title="Bajar una posición">${ico('down')}</button>
-        <button class="hw-btn icon-sm" data-act="duplicate" aria-label="Duplicar (Ctrl+J)" title="Duplicar (Ctrl+J)">${ico('duplicate')}</button>
-        <button class="hw-btn icon-sm" data-act="rename" aria-label="Renombrar (F2)" title="Renombrar (F2 o doble clic en el nombre)">${ico('pencil')}</button>
-        <button class="hw-btn icon-sm danger" data-act="delete" aria-label="Eliminar (Supr)" title="Eliminar (Supr)">${ico('trash')}</button>
       </div>
       <p class="layer-hint">Girar: clic derecho sobre la capa en el visor, asa superior del marco o [ ].</p>
       </details>`;
@@ -477,14 +490,18 @@ export class LayersPanel {
     const set = (el: HTMLInputElement | HTMLSelectElement | null, v: string) => {
       if (el && document.activeElement !== el && el.value !== v) el.value = v;
     };
-    const q = <T extends HTMLElement>(s: string) => this.el.querySelector<T>(s);
+    const q = <T extends HTMLElement>(s: string) => this.propsEl.querySelector<T>(s) ?? this.el.querySelector<T>(s);
+    const all = <T extends HTMLElement>(s: string) => [...this.el.querySelectorAll<T>(s), ...this.propsEl.querySelectorAll<T>(s)];
     const l = this.active();
+    // The top of the Capas panel and its bottom row act on the selected layer.
+    for (const c of this.el.querySelectorAll<HTMLInputElement | HTMLSelectElement>('.layers-top [data-prop]')) c.disabled = !l;
+    this.el.querySelectorAll<HTMLButtonElement>('.layers-foot [data-act]').forEach((b) => {
+      b.disabled = !l && ['show-fx', 'duplicate', 'delete'].includes(b.dataset.act!);
+    });
     if (!l) return;
     const r1 = (n: number) => String(Math.round(n * 10) / 10);
-    set(q('[data-prop="opacity"]'), String(Math.round(l.opacity * 100)));
-    const out = q('[data-out="opacity"]');
-    if (out) out.textContent = `${Math.round(l.opacity * 100)}%`;
-    set(q('[data-prop="blend"]'), l.blend);
+    for (const c of all<HTMLInputElement>('[data-prop="opacity"]')) set(c, String(Math.round(l.opacity * 100)));
+    for (const c of all<HTMLSelectElement>('[data-prop="blend"]')) set(c, l.blend);
     set(q('[data-prop="scale"]'), r1(l.scaleX * 100));
     if (l.text) {
       const t = l.text;

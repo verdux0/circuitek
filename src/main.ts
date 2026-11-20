@@ -370,6 +370,7 @@ function clampDocSize(w: number, h: number): [number, number] {
 }
 const layersPanel = new LayersPanel({
   toastUndo,
+  showEffects: () => shell.focus('effects'),
   doc: () => doc,
   bitmaps,
   editDoc,
@@ -390,6 +391,7 @@ const layersPanel = new LayersPanel({
   rowMenu: (id, x, y) => openRowMenu(id, x, y),
 });
 $('layers').append(layersPanel.el);
+$('layer-props').append(layersPanel.propsEl);
 
 /* ---- text layers ---- */
 const fonts = { local: [] as string[], files: [] as string[], version: 0 };
@@ -1981,6 +1983,8 @@ function openLayerMenu(id: string | null, x: number, y: number): void {
         { label: 'Cortar capa', icon: 'cut', keys: 'Ctrl+X', action: () => copyLayer(true) },
         pasteItem,
         { label: 'Duplicar', icon: 'duplicate', keys: 'Ctrl+J', action: () => layersPanel.duplicateActive() },
+        { label: 'Subir una posición', icon: 'up', disabled: doc.layers.indexOf(l) === doc.layers.length - 1, action: () => layersPanel.layerAction('up') },
+        { label: 'Bajar una posición', icon: 'down', disabled: doc.layers.indexOf(l) === 0, action: () => layersPanel.layerAction('down') },
         { label: 'Renombrar', icon: 'pencil', keys: 'F2', action: () => (shell.focus('layers'), layersPanel.renameActive()) },
         'sep',
         { label: 'Eliminar capa', icon: 'trash', keys: 'Supr', danger: true, action: () => layersPanel.deleteActive() },

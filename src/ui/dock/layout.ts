@@ -40,7 +40,7 @@ export interface Layout {
   hidden: PanelId[];
 }
 
-/** Default arrangement: effect controls on the left, layers and projects on the right. */
+/** Default arrangement: effect controls on the left; properties / projects and layers on the right. */
 export function defaultLayout(): Layout {
   return {
     columns: [
@@ -60,8 +60,8 @@ export function defaultLayout(): Layout {
         width: 272,
         collapsed: false,
         blocks: [
+          { id: 'right-props', tabs: ['properties', 'projects'], activeTab: 'properties', size: 4 },
           { id: 'right-layers', tabs: ['layers'], activeTab: 'layers', size: 5 },
-          { id: 'right-projects', tabs: ['projects'], activeTab: 'projects', size: 2 },
         ],
       },
     ],
