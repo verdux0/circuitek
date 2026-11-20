@@ -1,4 +1,5 @@
 import './legacy';
+import './theme.css';
 import './styles.css';
 import './fonts';
 import { Engine, MAX_MEGAPIXELS, PREVIEW_MAX, PREVIEW_MAX_ZOOMED } from './engine';
@@ -1616,33 +1617,6 @@ $('btn-fx-clear').addEventListener('click', () => {
 $('btn-undo').addEventListener('click', undo);
 $('btn-redo').addEventListener('click', redo);
 initCollapsibles(document.body);
-
-/* ------------------------------ theme ------------------------------ */
-const THEME_KEY = 'circuitek:theme';
-function applyTheme(t: 'light' | 'dark', save: boolean): void {
-  document.documentElement.dataset.theme = t;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t === 'dark' ? '#161618' : '#e8e6e1');
-  $('btn-theme').setAttribute('aria-label', t === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro');
-  if (save) {
-    try {
-      localStorage.setItem(THEME_KEY, t);
-    } catch {
-      /* storage unavailable */
-    }
-  }
-}
-applyTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light', false);
-$('btn-theme').addEventListener('click', () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark', true));
-// Follow the system while the user has not chosen.
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-  let saved: string | null = null;
-  try {
-    saved = localStorage.getItem(THEME_KEY);
-  } catch {
-    /* ignore */
-  }
-  if (!saved) applyTheme(e.matches ? 'dark' : 'light', false);
-});
 
 /* ------------------------------ effects of the active layer ------------------------------ */
 function syncFxLabel(): void {

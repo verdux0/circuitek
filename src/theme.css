@@ -1,0 +1,116 @@
+/* ============ circuitek · design tokens ============
+ * The ONLY place with literal colours, fonts and measures. Components (styles.css) use these
+ * variables and nothing else.
+ *
+ * [ref]  Photopea reference, section 2 (docs/photopea-ui-reference/README.md), measured values.
+ * [own]  Our choice, where the reference gives no value (accent hex, dimmed text, spacing…).
+ */
+:root {
+  color-scheme: dark;
+
+  /* ---- type ---- */
+  --font: 'Open Sans', 'Segoe UI', sans-serif;                         /* [ref] */
+  --font-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;    /* [own] time codes, values */
+  --fs: 13px;                                                          /* [ref] */
+  --fs-xs: 10px;
+  --fs-s: 11px;
+  --fs-m: 12px;
+  --fs-l: 15px;
+  --fs-xl: 18px;
+  --fw: 400;
+  --fw-bold: 600;
+  --lh: 1.35;
+
+  /* ---- colours ---- */
+  --c-raised: #474747;        /* [ref] app background, buttons, active tab, panel content */
+  --c-sunken: #252525;        /* [ref] panel headers, inputs, canvas */
+  --c-text: #d5d5d5;          /* [ref] */
+  --c-tool-active: #5d5d5d;   /* [ref] active tool / pressed button */
+  --c-selected: rgba(0, 0, 0, 0.25); /* [ref] selected list row */
+  --c-text-dim: #bdbdbd;      /* [own] secondary text, ≥ 4.5:1 on --c-raised */
+  --c-text-faint: #8f8f8f;    /* [own] decorative / disabled */
+  --c-hover: #555555;         /* [own] button hover */
+  --c-line: #2e2e2e;          /* [own] separators between blocks and rows */
+  --c-accent: #3d8ee6;        /* [own] Photopea's blue active-tool bar; hex not measured */
+  --c-on-accent: #ffffff;
+  --c-danger: #ff7a66;        /* [own] destructive actions, ≥ 4.5:1 on --c-raised */
+  --c-brand: #ff4a1c;         /* [own] glitch brand colour: logo, LEDs */
+  --c-overlay: rgba(0, 0, 0, 0.5);
+  --c-scrim: rgba(0, 0, 0, 0.7);      /* [own] HUD / badges over the canvas */
+  --c-white: #ffffff;
+  --c-drop: rgba(61, 142, 230, 0.3);  /* [own] drop target over the canvas */
+
+  /* ---- menus (light, as in the reference) ---- */
+  --menu-bg: #ffffff;                       /* [ref] */
+  --menu-shadow: 0 0 20px rgba(0, 0, 0, 0.2); /* [ref] */
+  --menu-w: 190px;                          /* [ref] */
+  --menu-text: #1e1e1e;                     /* [own] */
+  --menu-text-dim: #707070;                 /* [own] shortcuts on the right, in grey */
+  --menu-hover: #e6e6e6;                    /* [own] */
+  --menu-line: #dddddd;                     /* [own] */
+
+  /* ---- shape ---- */
+  --radius: 3px;              /* [ref] buttons, inputs */
+  --radius-l: 6px;            /* [ref] active tool: 0 6 6 0 */
+  --btn-pad: 2px 5px 3px;     /* [ref] */
+  --border: 1px;
+  --focus-ring: 2px;
+  --shadow-float: 0 6px 28px rgba(0, 0, 0, 0.5); /* [own] dialogs, floating panels */
+
+  /* ---- measures ---- */
+  --h-menubar: 33px;          /* [ref] */
+  --h-options: 32px;          /* [ref] */
+  --h-panel-head: 26px;       /* [ref] */
+  --h-row: 27px;              /* [ref] list rows */
+  --h-ctl: 24px;              /* [own] inputs and buttons inside panels */
+  --h-touch: 40px;            /* [own] minimum target on phones */
+  --icon: 16px;
+  --icon-s: 14px;
+  --icon-l: 20px;
+  --thumb-w: 36px;            /* layer thumbnail */
+  --thumb-h: 24px;
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 6px;
+  --sp-4: 8px;
+  --sp-5: 12px;
+  --sp-6: 16px;
+  --sp-7: 24px;
+  --dialog-w: 760px;
+  --menu-max-h: 70vh;
+
+  /* ---- layers above the canvas ---- */
+  --z-hud: 2;
+  --z-panel-float: 15;
+  --z-menu: 50;
+  --z-sheet: 20;
+  --z-overlay: 30;
+  --z-toast: 40;
+
+  /* ---- illustrations: CCD board, knobs, LEDs, logo ---- */
+  --pcb-board: #17603a;
+  --pcb-board-hi: #23804c;
+  --pcb-board-lo: #0f4527;
+  --pcb-edge: #0a2c17;
+  --pcb-trace: rgba(214, 178, 92, 0.35);
+  --pcb-via: rgba(214, 178, 92, 0.5);
+  --pcb-silk: rgba(255, 255, 255, 0.7);
+  --pcb-lead: #c9a24a;
+  --pcb-pad: #e3b752;
+  --pcb-pad-hi: #ffd27a;
+  --pcb-pad-edge: #7a5c1c;
+  --pcb-chip: #1c1c1e;
+  --pcb-chip-notch: #2c2c2e;
+  --pcb-chip-label: #8b8a90;
+  --pcb-label: #f2f1ea;
+  --pcb-shadow: rgba(0, 0, 0, 0.4);
+  --knob-body: #5a5a5a;
+  --knob-body-hi: #6a6a6a;
+  --knob-cap: #8a8a8a;
+  --knob-tick: #9a9a9a;
+  --led-off: #4a2a24;
+  --led-on: #ff3b1f;
+  --led-glow: rgba(255, 59, 31, 0.6);
+  --logo-r: #ff2d55;
+  --logo-b: #12b5ff;
+}

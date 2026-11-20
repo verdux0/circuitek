@@ -50,7 +50,7 @@ export function defaultLayout(): Layout {
         width: 264,
         collapsed: false,
         blocks: [
-          { id: 'left-fx', tabs: ['effects', 'motion'], activeTab: 'effects', size: 3 },
+          { id: 'left-fx', tabs: ['effects', 'motion'], activeTab: 'effects', size: 6 },
           { id: 'left-stages', tabs: ['stages'], activeTab: 'stages', size: 4 },
         ],
       },

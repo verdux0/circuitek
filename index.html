@@ -3,21 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#e8e6e1" />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#474747" />
+    <meta name="color-scheme" content="dark" />
     <meta name="description" content="Editor de fotos glitch 100% local que simula el circuit bending de una cámara." />
     <title>circuitek · circuit bending</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23151515'/%3E%3Crect x='9' y='7' width='14' height='18' rx='2' fill='%23333'/%3E%3Cpath d='M5 11h4M5 16h4M5 21h4M23 11h4M23 16h4M23 21h4' stroke='%23d8a640' stroke-width='2'/%3E%3Cpath d='M8 11c8 2 8 8 16 10' stroke='%23ff4a1c' stroke-width='2.4' fill='none'/%3E%3C/svg%3E" />
-    <script>
-      // Theme before first paint (no flash): saved choice, else the system setting.
-      try {
-        var t = localStorage.getItem('circuitek:theme') || localStorage.getItem('glitch-editor:theme');
-        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        document.documentElement.dataset.theme = t;
-      } catch (e) {
-        document.documentElement.dataset.theme = 'light';
-      }
-    </script>
   </head>
   <body>
     <div class="app-shell" id="app">
@@ -29,7 +19,6 @@
             <button class="hw-btn icon" id="btn-gifsearch" aria-label="Buscar GIF en GifCities (Internet Archive)" title="Buscar GIF en GifCities · Internet Archive (G)"><i data-ico="search"></i></button>
             <button class="hw-btn icon" id="btn-undo" aria-label="Deshacer" title="Deshacer (Ctrl+Z)"><i data-ico="undo"></i></button>
             <button class="hw-btn icon" id="btn-redo" aria-label="Rehacer" title="Rehacer (Ctrl+Shift+Z)"><i data-ico="redo"></i></button>
-            <button class="hw-btn icon" id="btn-theme" aria-label="Cambiar a modo oscuro" title="Modo claro / oscuro"><span class="theme-dark"><i data-ico="moon"></i></span><span class="theme-light"><i data-ico="sun"></i></span></button>
             <button class="hw-btn icon capture-btn" id="btn-capture" aria-label="Capturar como proyecto nuevo" title="Capturar: guarda el estado actual como proyecto nuevo, con el fotograma actual si hay vídeo (Espacio; con vídeo, Ctrl+Shift+S)"><i data-ico="camera"></i></button>
           </div>
 
