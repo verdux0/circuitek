@@ -381,6 +381,7 @@ const layersPanel = new LayersPanel({
   editText: (id, patch, phase) => void editText(id, patch, phase),
   openTextEditor: (id) => openTextEditor(id),
   addTextLayer: () => void addTextLayer(),
+  searchGifs: () => gifSearch.open(),
   extraFonts: () => fonts,
   fontsVersion: () => fonts.version,
   loadLocalFonts: () => void loadLocalFonts(),

@@ -50,6 +50,8 @@ export interface LayersHost {
   fontNote(t: TextProps): string;
   openTextEditor(id: string): void;
   addTextLayer(): void;
+  /** Opens the «Buscar GIF» panel. */
+  searchGifs(): void;
   extraFonts(): { local: string[]; files: string[] };
   fontsVersion(): number;
   loadLocalFonts(): void;
@@ -88,6 +90,7 @@ export class LayersPanel {
         <button class="layers-act" data-act="show-fx" aria-label="Efectos de la capa" title="Efectos de la capa">${ico('fx')}</button>
         <button class="layers-act" data-act="duplicate" aria-label="Duplicar capa (Ctrl+J)" title="Duplicar capa (Ctrl+J)">${ico('duplicate')}</button>
         <button class="layers-act" data-act="add-text" aria-label="Nueva capa de texto (T)" title="Nueva capa de texto (T)">${addIco('type')}</button>
+        <button class="layers-act" data-act="search-gif" aria-label="Buscar GIF en GifCities (G)" title="Buscar GIF en GifCities (G)">${ico('search')}</button>
         <button class="layers-act" data-act="add" aria-label="Nueva capa desde imagen (I)" title="Nueva capa: añadir imágenes, GIF o vídeos (I · también arrastrar o Ctrl+V)">${addIco('image')}</button>
         <button class="layers-act danger" data-act="delete" aria-label="Eliminar capa (Supr · se puede deshacer)" title="Eliminar capa (Supr · se puede deshacer)">${ico('trash')}</button>
       </div>`;
@@ -146,6 +149,7 @@ export class LayersPanel {
     const row = t.closest<HTMLElement>('.layer-row');
     if (btn?.dataset.act === 'add') return this.host.pickFiles();
     if (btn?.dataset.act === 'add-text') return this.host.addTextLayer();
+    if (btn?.dataset.act === 'search-gif') return this.host.searchGifs();
     if (btn?.dataset.act === 'show-fx') return this.host.showEffects();
     const tb = t.closest<HTMLElement>('[data-font], [data-text-toggle], [data-align]');
     if (tb) return this.textButton(tb);
