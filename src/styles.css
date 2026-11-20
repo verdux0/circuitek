@@ -644,16 +644,42 @@ details.sub[open] { display: flex; flex-direction: column; gap: var(--sp-4); }
 .progress-card progress { width: calc(var(--sp-7) * 6); accent-color: var(--c-accent); }
 .fatal { max-width: calc(var(--sp-7) * 22); margin: 15vh auto; padding: var(--sp-7); }
 
-/* ======================= narrow screens (before phase 6) ======================= */
+/* ======================= floating panels and icon column (phones; src/ui/dock) ======================= */
+.canvas-area { position: relative; }
+.dock-float-layer { position: absolute; inset: 0; z-index: var(--z-panel-float); pointer-events: none; }
+.dock-float { position: absolute; pointer-events: auto; box-shadow: var(--shadow-float); display: flex; flex-direction: column; }
+.dock-float .dock-head { flex-wrap: nowrap; }
+.dock-float-close { all: unset; margin-left: auto; display: grid; place-items: center; width: var(--h-panel-head); height: var(--h-panel-head); cursor: pointer; color: var(--c-text); }
+.dock-float-close:hover { background: var(--c-hover); }
+.dock-float-resize {
+  position: absolute; left: 0; bottom: 0; width: var(--sp-6); height: var(--sp-6); cursor: nesw-resize; touch-action: none;
+  background: linear-gradient(45deg, var(--c-text-faint) 0 12%, transparent 12% 30%, var(--c-text-faint) 30% 42%, transparent 42%);
+}
+.dock-icons { display: none; }
+.dock-icon { all: unset; display: grid; place-items: center; width: var(--w-icons); height: var(--w-icons); cursor: pointer; color: var(--c-text); }
+.dock-icon .ico { width: var(--icon-l); height: var(--icon-l); }
+.dock-icon:hover { background: var(--c-hover); }
+.dock-icon[aria-pressed='true'] { background: var(--c-tool-active); box-shadow: inset var(--sp-1) 0 0 var(--c-accent); }
+.dock-icon-sep { height: var(--border); margin: var(--sp-2) var(--sp-3); background: var(--c-line); }
+
+/* ======================= phones (≤ 768 px; reference, section 9) ======================= */
 @media (max-width: 768px) {
-  body { overflow: auto; }
-  .app-shell { height: auto; grid-template-rows: var(--h-menubar) var(--h-options) auto; }
-  .workspace { grid-template-columns: minmax(0, 1fr); }
-  .canvas-area { order: -1; height: 62vh; }
-  .dock-col { width: auto; overflow: visible; }
-  .dock-block { flex-basis: auto; }
-  .dock-content { overflow: visible; }
-  .mb-kind, .mb-vol { display: none; }
+  .workspace { grid-template-columns: minmax(0, 1fr) var(--w-icons); }
+  .dock-col { display: none; }
+  .dock-icons {
+    display: flex; flex-direction: column; overflow-y: auto; background: var(--c-raised);
+    border-left: var(--border) solid var(--c-line); padding: var(--sp-2) 0; scrollbar-width: none;
+  }
+  .menu-title { padding: 0 var(--sp-5); }
+  .menu-item { min-height: var(--h-touch); }
+  .dock-tab { height: var(--h-touch); }
+  .dock-float .dock-head, .dock-float-close { min-height: var(--h-touch); }
+  .dock-float-close { width: var(--h-touch); height: var(--h-touch); }
+  .dock-float-resize { width: var(--sp-7); height: var(--sp-7); }
+  .layers-act { width: var(--h-touch); height: var(--h-touch); }
+  .mb-kind, .mb-vol, #mb-mute { display: none; }
+  .mb-time { font-size: var(--fs-xs); }
+  .mb-seek { min-width: calc(var(--sp-7) * 5); }
   .variant-grid { grid-template-columns: repeat(2, 1fr); }
   .pin-legend { grid-template-columns: 1fr; }
   .export-backdrop, .gs-backdrop { padding: 0; }

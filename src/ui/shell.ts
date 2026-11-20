@@ -37,12 +37,25 @@ export function initShell(): Shell {
       },
     });
   }
-  const dock = new Dock(registry, { left: document.getElementById('dock-left')!, right: document.getElementById('dock-right')! }, defaultLayout());
+  const dock = new Dock(
+    registry,
+    {
+      columns: { left: document.getElementById('dock-left')!, right: document.getElementById('dock-right')! },
+      icons: document.getElementById('dock-icons')!,
+      float: document.getElementById('dock-float')!,
+    },
+    defaultLayout(),
+    matchMedia('(max-width: 768px)'),
+  );
   document.getElementById('panel-sources')?.remove();
   return {
     dock,
     registry,
-    focus: (id) => dock.setLayout(focusPanel(dock.layout, id)),
+    focus: (id) => {
+      dock.setLayout(focusPanel(dock.layout, id));
+      // Phones: panels are not docked, so showing one means opening it floating.
+      if (dock.compact) dock.toggleFloating(id, true);
+    },
     toggle: (id, visible) => dock.setLayout(setPanelVisible(dock.layout, id, visible ?? isHidden(dock.layout, id))),
     visible: (id) => !isHidden(dock.layout, id),
   };

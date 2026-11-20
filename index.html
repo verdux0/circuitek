@@ -38,6 +38,7 @@
       <div class="workspace">
         <aside class="dock-col" id="dock-left" aria-label="Controles del efecto"></aside>
         <main class="canvas-area" id="canvas-area">
+        <div class="dock-float-layer" id="dock-float"></div>
         <div class="viewer" id="viewer">
           <div class="stage" id="stage" aria-label="Visor: rueda = zoom · Ctrl/Alt + arrastrar = desplazar · arrastra una capa para moverla"></div>
           <canvas id="screen" hidden aria-hidden="true"></canvas>
@@ -58,6 +59,8 @@
         </div>
         </main>
         <aside class="dock-col" id="dock-right" aria-label="Capas y proyectos"></aside>
+        <!-- Phones: one icon per panel; a tap opens it floating over the canvas (#dock-float). -->
+        <nav class="dock-icons" id="dock-icons" aria-label="Paneles"></nav>
       </div>
     </div>
 

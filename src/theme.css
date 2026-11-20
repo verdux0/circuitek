@@ -80,6 +80,7 @@
   --sl-label-w: 64px;         /* [own] slider rows: label · slider · number · unit */
   --sl-num-w: 44px;
   --sl-unit-w: 24px;
+  --w-icons: 39px;            /* [ref] icon column of the right bar */
   --menu-max-h: 70vh;
 
   /* ---- layers above the canvas ---- */
@@ -116,4 +117,17 @@
   --led-glow: rgba(255, 59, 31, 0.6);
   --logo-r: #ff2d55;
   --logo-b: #12b5ff;
+}
+
+/* Phones: bigger touch targets (the reference enlarges its buttons on mobile). [own values] */
+@media (max-width: 768px) {
+  :root {
+    --h-menubar: 40px;
+    --h-options: 44px;
+    --h-ctl: 32px;
+    --h-row: 36px;
+    --w-icons: 44px;
+    --sl-label-w: 72px;
+    --sl-num-w: 52px;
+  }
 }
