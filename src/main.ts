@@ -24,6 +24,7 @@ import { Viewport } from './ui/viewport';
 import { LayersPanel } from './ui/layers';
 import { hydrateIcons } from './ui/icons';
 import { initCollapsibles } from './ui/collapse';
+import { initShell } from './ui/shell';
 import { ExportUI } from './ui/exportui';
 import { GifSearchPanel } from './ui/gifsearch';
 import { AnimClock } from './media/animclock';
@@ -36,6 +37,8 @@ import { GifPlayer, VideoPlayer, mediaKind, type MediaPlayer } from './media/pla
 import { SPEEDS, formatTime, spokenTime } from './media/timing';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+/** Menus, options bar, canvas and dock columns (panels by id: see ui/shell.ts). */
+const shell = initShell();
 hydrateIcons();
 /** Pre-layers versions kept the last glitch settings here: used as the first layer's effects. */
 const LEGACY_STORE_KEY = 'circuitek:state:v1';
@@ -1610,54 +1613,9 @@ $('btn-fx-clear').addEventListener('click', () => {
   if (l) clearLayerFx(l.id);
 });
 
-/* ---- side panel tabs: Capas / Efectos ---- */
-const TAB_KEY = 'circuitek:tab';
-function showTab(tab: string, save = true): void {
-  if (tab !== 'layers' && tab !== 'fx') tab = 'layers';
-  for (const b of document.querySelectorAll<HTMLElement>('.rack-tab')) {
-    const on = b.dataset.tab === tab;
-    b.classList.toggle('on', on);
-    b.setAttribute('aria-selected', String(on));
-    b.tabIndex = on ? 0 : -1;
-  }
-  for (const p of document.querySelectorAll<HTMLElement>('.tab-panel')) p.hidden = p.dataset.panel !== tab;
-  if (save) {
-    try {
-      localStorage.setItem(TAB_KEY, tab);
-    } catch {
-      /* storage unavailable */
-    }
-  }
-}
-document.querySelector('.rack-tabs')!.addEventListener('click', (e) => {
-  const b = (e.target as HTMLElement).closest<HTMLElement>('.rack-tab');
-  if (b) showTab(b.dataset.tab!);
-});
-document.querySelector('.rack-tabs')!.addEventListener('keydown', (e) => {
-  const k = (e as KeyboardEvent).key;
-  if (k !== 'ArrowLeft' && k !== 'ArrowRight') return;
-  const next = document.querySelector<HTMLElement>('.rack-tab:not(.on)')!;
-  showTab(next.dataset.tab!);
-  next.focus();
-});
-let savedTab = 'layers';
-try {
-  savedTab = localStorage.getItem(TAB_KEY) ?? 'layers';
-} catch {
-  /* storage unavailable */
-}
-showTab(savedTab, false);
 $('btn-undo').addEventListener('click', undo);
 $('btn-redo').addEventListener('click', redo);
-const rack = $('rack');
-initCollapsibles(rack);
-$('btn-rack').addEventListener('click', () => {
-  const open = !rack.classList.contains('open');
-  rack.classList.toggle('open', open);
-  $('btn-rack').classList.toggle('is-open', open);
-  $('btn-rack').setAttribute('aria-expanded', String(open));
-  $('btn-rack').setAttribute('aria-label', open ? 'Cerrar panel' : 'Abrir panel');
-});
+initCollapsibles(document.body);
 
 /* ------------------------------ theme ------------------------------ */
 const THEME_KEY = 'circuitek:theme';
@@ -1828,7 +1786,7 @@ function layerKey(e: KeyboardEvent, t: HTMLElement): boolean {
   const l = getLayer(doc, doc.active);
   if (!l) return false;
   // Knobs and other focused widgets use the arrows / Supr themselves.
-  const widget = t !== document.body && t.closest('.knob, .layers, .rack, [role="slider"]');
+  const widget = t !== document.body && t.closest('.knob, .layers, .dock-col, [role="slider"]');
   const step = e.shiftKey ? 10 : 1;
   const arrows: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
   if (arrows[e.key] && !widget) {
@@ -1936,15 +1894,6 @@ const exportUi = new ExportUI(
   $<HTMLButtonElement>('btn-export-menu'),
 );
 $('progress-cancel').addEventListener('click', () => exportUi.cancel());
-/** Narrow screens: the export button lives in a fixed dock, not inside the closed bottom panel. */
-{
-  const split = document.querySelector<HTMLElement>('.split-btn')!;
-  const home = split.parentElement!;
-  const narrow = matchMedia('(max-width: 1080px)');
-  const place = () => (narrow.matches ? $('export-dock') : home).append(split);
-  narrow.addEventListener('change', place);
-  place();
-}
 
 /* ------------------------------ GIF search (GifCities · Internet Archive) ------------------------------ */
 // Nothing is requested until the user searches inside the panel.
@@ -1977,7 +1926,7 @@ function openLayerMenu(id: string | null, x: number, y: number): void {
         { label: 'Cortar capa', icon: 'cut', keys: 'Ctrl+X', action: () => copyLayer(true) },
         pasteItem,
         { label: 'Duplicar', icon: 'duplicate', keys: 'Ctrl+J', action: () => layersPanel.duplicateActive() },
-        { label: 'Renombrar', icon: 'pencil', keys: 'F2', action: () => (showTab('layers'), layersPanel.renameActive()) },
+        { label: 'Renombrar', icon: 'pencil', keys: 'F2', action: () => (shell.focus('layers'), layersPanel.renameActive()) },
         'sep',
         { label: 'Eliminar capa', icon: 'trash', keys: 'Supr', danger: true, action: () => layersPanel.deleteActive() },
       ]
@@ -2136,6 +2085,12 @@ async function hashPixels(img: ImageData): Promise<string> {
 }
 Object.assign(window, {
   __glitch: {
+    /** Dock layout (tests): read it, show / hide panels by id. */
+    dock: {
+      layout: () => shell.dock.layout,
+      toggle: (id: string, visible?: boolean) => shell.toggle(id, visible),
+      focus: (id: string) => shell.focus(id),
+    },
     /** Still animation clock (tests): drive it and read its stats. */
     anim: {
       play: () => anim.play(),

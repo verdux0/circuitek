@@ -20,9 +20,8 @@
     </script>
   </head>
   <body>
-    <div class="app">
-      <main class="deck">
-        <header class="topbar">
+    <div class="app-shell" id="app">
+      <header class="menubar" id="menubar">
           <h1 class="logo"><span class="logo-word" data-t="GL1TCH">GL1TCH</span><span class="logo-sub">editor<br />circuit&nbsp;bent</span></h1>
           <div class="topbar-actions">
             <button class="hw-btn icon" id="btn-new" aria-label="Documento nuevo" title="Documento nuevo (la sesión actual se puede recuperar con Ctrl+Z)"><i data-ico="new"></i></button>
@@ -33,8 +32,36 @@
             <button class="hw-btn icon" id="btn-theme" aria-label="Cambiar a modo oscuro" title="Modo claro / oscuro"><span class="theme-dark"><i data-ico="moon"></i></span><span class="theme-light"><i data-ico="sun"></i></span></button>
             <button class="hw-btn icon capture-btn" id="btn-capture" aria-label="Capturar como proyecto nuevo" title="Capturar: guarda el estado actual como proyecto nuevo, con el fotograma actual si hay vídeo (Espacio; con vídeo, Ctrl+Shift+S)"><i data-ico="camera"></i></button>
           </div>
-        </header>
 
+          <div class="menubar-export">
+              <div class="split-btn" role="group" aria-label="Exportar">
+                <button class="hw-btn accent ex-main" id="btn-export"><i data-ico="download"></i><span>Exportar</span><small>PNG</small></button>
+                <button class="hw-btn accent ex-arrow" id="btn-export-menu" aria-haspopup="menu" aria-expanded="false" aria-label="Elegir formato de exportación (PNG, JPG, GIF, MP4)" title="Formatos y opciones de exportación"><i data-ico="chevron"></i></button>
+              </div>
+          </div>
+      </header>
+      <div class="optionsbar" id="optionsbar">
+        <div class="media-bar" id="media-bar" role="group" aria-label="Controles de vídeo / GIF" hidden>
+          <div class="mb-row">
+            <button class="hw-btn icon-sm" id="mb-prev" aria-label="Fotograma anterior" title="Fotograma anterior (,)"><i data-ico="step-back"></i></button>
+            <button class="hw-btn icon-sm mb-play" id="mb-play" aria-label="Reproducir" title="Reproducir / pausa (Espacio)"><i data-ico="play"></i></button>
+            <button class="hw-btn icon-sm" id="mb-next" aria-label="Fotograma siguiente" title="Fotograma siguiente (.)"><i data-ico="step-forward"></i></button>
+            <input class="mb-seek" id="mb-seek" type="range" min="0" max="0" step="any" value="0" aria-label="Posición" />
+            <span class="mb-time" id="mb-time" aria-hidden="true">0:00.0 / 0:00.0</span>
+          </div>
+          <div class="mb-row mb-row2">
+            <span class="mb-kind" id="mb-kind">VÍDEO</span>
+            <select id="mb-speed" aria-label="Velocidad de reproducción" title="Velocidad"></select>
+            <button class="hw-btn icon-sm" id="mb-loop" aria-label="Bucle" aria-pressed="true" title="Bucle"><i data-ico="repeat"></i></button>
+            <button class="hw-btn icon-sm" id="mb-mute" aria-label="Silenciar" aria-pressed="true" title="Silenciar / activar sonido (M)"><i data-ico="volume-x"></i></button>
+            <input class="mb-vol" id="mb-vol" type="range" min="0" max="100" step="1" value="0" aria-label="Volumen" />
+            <span class="mb-note" id="mb-note" role="status" hidden title="JPEG y pixel sort son demasiado lentos para cada fotograma: se aplican al pausar, al capturar y al exportar">JPEG/SORT: SOLO EN PAUSA</span>
+          </div>
+        </div>
+      </div>
+      <div class="workspace">
+        <aside class="dock-col" id="dock-left" aria-label="Controles del efecto"></aside>
+        <main class="canvas-area" id="canvas-area">
         <div class="viewer" id="viewer">
           <div class="stage" id="stage" aria-label="Visor: rueda = zoom · Ctrl/Alt + arrastrar = desplazar · arrastra una capa para moverla"></div>
           <canvas id="screen" hidden aria-hidden="true"></canvas>
@@ -53,30 +80,24 @@
           <span class="led viewer-busy" id="busy" title="Procesando" aria-hidden="true"></span>
           <div class="drop-hint">Suelta para importar</div>
         </div>
+        </main>
+        <aside class="dock-col" id="dock-right" aria-label="Capas y proyectos"></aside>
+      </div>
+    </div>
 
-        <div class="media-bar" id="media-bar" role="group" aria-label="Controles de vídeo / GIF" hidden>
-          <div class="mb-row">
-            <button class="hw-btn icon-sm" id="mb-prev" aria-label="Fotograma anterior" title="Fotograma anterior (,)"><i data-ico="step-back"></i></button>
-            <button class="hw-btn icon-sm mb-play" id="mb-play" aria-label="Reproducir" title="Reproducir / pausa (Espacio)"><i data-ico="play"></i></button>
-            <button class="hw-btn icon-sm" id="mb-next" aria-label="Fotograma siguiente" title="Fotograma siguiente (.)"><i data-ico="step-forward"></i></button>
-            <input class="mb-seek" id="mb-seek" type="range" min="0" max="0" step="any" value="0" aria-label="Posición" />
-            <span class="mb-time" id="mb-time" aria-hidden="true">0:00.0 / 0:00.0</span>
-          </div>
-          <div class="mb-row mb-row2">
-            <span class="mb-kind" id="mb-kind">VÍDEO</span>
-            <select id="mb-speed" aria-label="Velocidad de reproducción" title="Velocidad"></select>
-            <button class="hw-btn icon-sm" id="mb-loop" aria-label="Bucle" aria-pressed="true" title="Bucle"><i data-ico="repeat"></i></button>
-            <button class="hw-btn icon-sm" id="mb-mute" aria-label="Silenciar" aria-pressed="true" title="Silenciar / activar sonido (M)"><i data-ico="volume-x"></i></button>
-            <input class="mb-vol" id="mb-vol" type="range" min="0" max="100" step="1" value="0" aria-label="Volumen" />
-            <span class="mb-note" id="mb-note" role="status" hidden title="JPEG y pixel sort son demasiado lentos para cada fotograma: se aplican al pausar, al capturar y al exportar">JPEG/SORT: SOLO EN PAUSA</span>
-          </div>
-        </div>
-
+    <!-- Panel contents. The dock (src/ui/dock) moves each one into its column / block / tab. -->
+    <div id="panel-sources" hidden>
+      <div id="src-effects">
         <div class="fx-target" id="fx-target">
           <i data-ico="fx"></i>
           <span class="fx-target-label">EFECTOS DE</span>
           <span class="fx-target-name" id="fx-target-name">ninguna capa seleccionada</span>
         </div>
+          <div class="fx-tools">
+              <button class="hw-btn" id="btn-random" aria-label="Aleatorio" title="Efectos aleatorios para la capa (R)"><i data-ico="dices"></i></button>
+              <button class="hw-btn" id="btn-variants" aria-label="Variantes" title="8 variantes de los efectos de la capa (V)"><i data-ico="variants"></i></button>
+              <button class="hw-btn" id="btn-ab" aria-label="Ver original" title="Mantén pulsado para ver el original sin efectos (B)"><i data-ico="compare"></i></button>
+          </div>
         <nav class="controls" aria-label="Controles principales">
           <!-- Mini CCD chip: rewire right here (src/ui/rewire.ts, compact mode). Its expand button opens the full sheet. -->
           <div class="mini-rewire" id="mini-rewire"></div>
@@ -85,44 +106,6 @@
             <div class="ctl-knob" id="knob-filter"></div>
           </div>
         </nav>
-
-        <section class="projects" id="projects" aria-labelledby="projects-title">
-          <header class="projects-head">
-            <h2 id="projects-title">Proyectos <span class="project-count" id="project-count"></span></h2>
-            <span class="project-current" id="project-current" aria-live="polite"></span>
-            <div class="projects-actions">
-              <button class="hw-btn icon-sm" id="btn-save" aria-label="Guardar proyecto" title="Guardar proyecto (Ctrl+S)"><i data-ico="save"></i></button>
-              <button class="hw-btn icon-sm" id="btn-save-new" aria-label="Guardar como proyecto nuevo" title="Guardar como proyecto nuevo (Ctrl+Shift+S)"><i data-ico="duplicate"></i></button>
-              <button class="hw-btn icon-sm" id="btn-project-import" aria-label="Abrir archivo de proyecto" title="Abrir un archivo de proyecto .glitch"><i data-ico="file-up"></i></button>
-            </div>
-          </header>
-          <div class="project-grid" id="project-grid"></div>
-        </section>
-
-      </main>
-
-      <aside class="rack" id="rack" aria-label="Capas, efectos y herramientas">
-        <div class="rack-inner">
-          <section class="module tools" data-collapse="tools">
-            <div class="module-head"><h3>Herramientas</h3></div>
-            <div class="rack-tools">
-              <button class="hw-btn" id="btn-random" aria-label="Aleatorio" title="Efectos aleatorios para la capa (R)"><i data-ico="dices"></i></button>
-              <button class="hw-btn" id="btn-variants" aria-label="Variantes" title="8 variantes de los efectos de la capa (V)"><i data-ico="variants"></i></button>
-              <button class="hw-btn" id="btn-ab" aria-label="Ver original" title="Mantén pulsado para ver el original sin efectos (B)"><i data-ico="compare"></i></button>
-              <div class="split-btn" role="group" aria-label="Exportar">
-                <button class="hw-btn accent ex-main" id="btn-export"><i data-ico="download"></i><span>Exportar</span><small>PNG</small></button>
-                <button class="hw-btn accent ex-arrow" id="btn-export-menu" aria-haspopup="menu" aria-expanded="false" aria-label="Elegir formato de exportación (PNG, JPG, GIF, MP4)" title="Formatos y opciones de exportación"><i data-ico="chevron"></i></button>
-              </div>
-            </div>
-          </section>
-          <div class="rack-tabs" role="tablist" aria-label="Panel">
-            <button class="rack-tab" role="tab" id="tab-layers" data-tab="layers" aria-controls="panel-layers"><i data-ico="layers"></i> Capas</button>
-            <button class="rack-tab" role="tab" id="tab-fx" data-tab="fx" aria-controls="panel-fx"><i data-ico="fx"></i> Efectos</button>
-          </div>
-          <div class="tab-panel" id="panel-layers" role="tabpanel" aria-labelledby="tab-layers" data-panel="layers">
-            <div id="layers"></div>
-          </div>
-          <div class="tab-panel" id="panel-fx" role="tabpanel" aria-labelledby="tab-fx" data-panel="fx" hidden>
             <section class="module fx-module">
               <div class="module-head">
                 <h3><i data-ico="fx"></i> Efectos de <span class="fx-panel-name" id="fx-panel-name"></span></h3>
@@ -140,6 +123,14 @@
                 </label>
                 <button class="hw-btn icon" id="btn-dice" aria-label="Seed nueva" title="Seed nueva"><i data-ico="dices"></i></button>
               </div>
+              <div class="rack-row">
+                <select id="preset-select" aria-label="Presets de fábrica"></select>
+                <button class="hw-btn icon" id="btn-preset-save" aria-label="Guardar preset" title="Guardar los efectos de la capa como preset JSON"><i data-ico="save"></i></button>
+                <button class="hw-btn icon" id="btn-preset-load" aria-label="Cargar preset" title="Cargar un preset JSON en la capa"><i data-ico="open"></i></button>
+              </div>
+            </section>
+      </div>
+      <div id="src-motion">
               <div class="motion-box" id="motion-box" role="group" aria-labelledby="mo-title" hidden>
                 <div class="mo-head">
                   <span class="mo-title" id="mo-title">Movimiento</span>
@@ -165,14 +156,24 @@
                 </div>
                 <p class="mo-hint" id="mo-hint"></p>
               </div>
-              <div class="rack-row">
-                <select id="preset-select" aria-label="Presets de fábrica"></select>
-                <button class="hw-btn icon" id="btn-preset-save" aria-label="Guardar preset" title="Guardar los efectos de la capa como preset JSON"><i data-ico="save"></i></button>
-                <button class="hw-btn icon" id="btn-preset-load" aria-label="Cargar preset" title="Cargar un preset JSON en la capa"><i data-ico="open"></i></button>
-              </div>
-            </section>
-            <div id="stages"></div>
-          </div>
+
+        <p class="panel-empty">Selecciona una capa con efectos para animarla.</p>
+      </div>
+      <div id="src-stages"><div id="stages"></div></div>
+      <div id="src-layers"><div id="layers"></div></div>
+      <div id="src-projects">
+        <section class="projects" id="projects" aria-labelledby="projects-title">
+          <header class="projects-head">
+            <h2 id="projects-title">Proyectos <span class="project-count" id="project-count"></span></h2>
+            <span class="project-current" id="project-current" aria-live="polite"></span>
+            <div class="projects-actions">
+              <button class="hw-btn icon-sm" id="btn-save" aria-label="Guardar proyecto" title="Guardar proyecto (Ctrl+S)"><i data-ico="save"></i></button>
+              <button class="hw-btn icon-sm" id="btn-save-new" aria-label="Guardar como proyecto nuevo" title="Guardar como proyecto nuevo (Ctrl+Shift+S)"><i data-ico="duplicate"></i></button>
+              <button class="hw-btn icon-sm" id="btn-project-import" aria-label="Abrir archivo de proyecto" title="Abrir un archivo de proyecto .glitch"><i data-ico="file-up"></i></button>
+            </div>
+          </header>
+          <div class="project-grid" id="project-grid"></div>
+        </section>
           <details class="rack-foot">
             <summary>Atajos</summary>
             <p>
@@ -183,13 +184,9 @@
               <b>Vídeo / GIF</b> · Espacio play/pausa · , / . fotograma anterior / siguiente · M silencio · Capturar guarda el fotograma actual a resolución completa.
             </p>
           </details>
-        </div>
-      </aside>
+      </div>
     </div>
 
-    <button class="hw-btn rack-toggle" id="btn-rack" aria-controls="rack" aria-expanded="false" aria-label="Abrir panel"><span class="when-closed"><i data-ico="layers"></i></span><span class="when-open"><i data-ico="close"></i></span></button>
-    <!-- Narrow screens: the export button moves here (always visible), out of the closed panel. -->
-    <div class="export-dock" id="export-dock"></div>
 
     <input type="file" id="file" accept="image/*,video/*,.gif,.mp4,.m4v,.webm,.mov,.mkv" multiple hidden />
     <input type="file" id="preset-file" accept=".json,application/json" hidden />

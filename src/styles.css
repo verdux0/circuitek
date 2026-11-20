@@ -86,15 +86,6 @@ svg { display: block; }
 }
 
 /* ---------- layout ---------- */
-.app {
-  display: grid;
-  grid-template-columns: minmax(0, 760px) minmax(400px, 550px);
-  gap: 28px;
-  justify-content: center;
-  align-items: start;
-  padding: 22px 24px 40px;
-}
-.deck { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
 /* ---------- top bar & logo ---------- */
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -136,7 +127,7 @@ svg { display: block; }
 .hw-btn:hover { background: linear-gradient(var(--btn-hover-hi), var(--btn-hover-lo)); }
 .hw-btn:active, .hw-btn.pressed { transform: translateY(2px); box-shadow: 0 1px 0 var(--edge), inset 0 1px 2px rgba(0, 0, 0, 0.15); }
 .hw-btn:disabled { opacity: 0.4; cursor: default; transform: none; }
-.hw-btn:focus-visible, .knob-dial:focus-visible, .pcb-svg .pin:focus-visible, summary:focus-visible, .rack-tab:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.hw-btn:focus-visible, .knob-dial:focus-visible, .pcb-svg .pin:focus-visible, summary:focus-visible, .dock-tab:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .hw-btn.icon { width: 46px; height: 40px; padding: 0; display: grid; place-items: center; }
 .hw-btn.icon { color: var(--ink); }
 .hw-btn.accent { background: linear-gradient(#ca400d, #b3330a); color: #fff; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25); }
@@ -317,16 +308,6 @@ svg { display: block; }
 .knob-lg .knob-label { font-size: 11px; }
 
 /* ---------- rack (right column) ---------- */
-.rack {
-  position: sticky; top: 22px;
-  border: 2px solid var(--edge);
-  border-radius: 10px;
-  background: var(--noise), var(--rack);
-  box-shadow: 0 4px 0 var(--edge), inset 0 1px 0 var(--hl-soft);
-  max-height: calc(100vh - 44px);
-  overflow: auto;
-}
-.rack-inner { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .rack-tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 8px; }
 .rack-tools .hw-btn { padding: 8px 6px; font-size: 13px; }
 .rack-row { display: flex; align-items: center; gap: 8px; }
@@ -337,8 +318,6 @@ svg { display: block; }
 }
 .rack-row select { color: var(--ink); background: var(--panel-hi); box-shadow: none; font: 600 13px var(--font); }
 .rack-foot { font-size: 11px; color: var(--ink-soft); margin: 2px 0 0; line-height: 1.5; }
-.rack-toggle { display: none; }
-.export-dock { display: none; }
 
 .stages { display: flex; flex-direction: column; gap: 12px; }
 
@@ -501,21 +480,6 @@ svg { display: block; }
 .fatal { max-width: 520px; margin: 15vh auto; padding: 24px; }
 
 /* ---------- responsive ---------- */
-@media (max-width: 1080px) {
-  .app { grid-template-columns: minmax(0, 760px); padding: 14px 14px 90px; }
-  .rack {
-    position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 15; max-height: 78vh;
-    border-radius: 14px 14px 0 0; border-bottom: 0; box-shadow: 0 -8px 30px #0004;
-    transform: translateY(105%); transition: transform 0.25s ease;
-  }
-  .rack.open { transform: none; }
-  .rack-toggle, .rack-toggle:hover { display: block; position: fixed; right: 14px; bottom: 16px; z-index: 16; background: linear-gradient(#2c2c2e, #151515); color: #fff; }
-  .rack-inner { padding-bottom: 84px; }
-  /* Export stays reachable without opening the panel: bottom left, beside the panel button. */
-  .export-dock { display: flex; position: fixed; left: 14px; bottom: 16px; z-index: 16; height: 48px; filter: drop-shadow(0 4px 12px #0005); }
-  .export-dock .split-btn .ex-main { padding: 0 14px; }
-  .export-dock .split-btn .ex-arrow { width: 44px; }
-}
 @media (max-width: 560px) {
   .logo-word { font-size: 28px; }
   .hw-btn.icon { width: 40px; height: 36px; }
@@ -588,7 +552,6 @@ svg { display: block; }
 }
 .media-bar[hidden] { display: none; }
 /* The transport bar takes ~90 px: the viewer gives them up so the knobs stay on screen. */
-.has-media .viewer { max-height: min(62vh, max(220px, calc(100vh - 455px))); }
 .mb-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .mb-row2 { flex-wrap: wrap; row-gap: 6px; }
 .mb-play.pressed { background: linear-gradient(#ff7a4a, var(--accent-dk)); color: #fff; }
@@ -632,10 +595,6 @@ svg { display: block; }
 .font-src .ico { width: 16px; height: 16px; }
 .theme-light, :root[data-theme='dark'] .theme-dark { display: none; }
 :root[data-theme='dark'] .theme-light { display: contents; }
-.rack-toggle .when-open, .rack.open ~ .rack-toggle .when-closed { display: none; }
-.rack-toggle .ico { color: #fff; width: 24px; height: 24px; }
-.rack-toggle.is-open .when-open { display: contents; }
-.rack-toggle.is-open .when-closed { display: none; }
 
 /* ---------- collapsible sections ---------- */
 .module-head { cursor: default; }
@@ -699,22 +658,6 @@ details.sub[open] { display: flex; flex-direction: column; gap: 8px; }
 }
 html, body { overflow-x: hidden; }
 
-/* ---------- side panel tabs ---------- */
-.rack-tabs {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px;
-  border: 2px solid var(--edge); border-radius: 8px; background: var(--rule);
-}
-.rack-tab {
-  all: unset; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; height: 36px;
-  border-radius: 5px; font: 800 13px var(--font); color: var(--ink);
-}
-.rack-tab .ico { width: 16px; height: 16px; }
-.rack-tab:hover { color: var(--ink); }
-.rack-tab.on { background: linear-gradient(var(--btn-hi), var(--btn-lo)); color: var(--ink); box-shadow: 0 2px 0 var(--edge), inset 0 1px 0 var(--hl), inset 0 -3px 0 var(--accent); }
-/* Inactive tab: flat, so the raised + underlined one reads as selected in both themes. */
-.rack-tab:not(.on):hover { background: var(--hl-soft); }
-.rack-tab.on .ico { color: var(--accent); }
-.rack-tab:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .tab-panel { display: flex; flex-direction: column; gap: 12px; }
 
 /* ---------- effects panel ---------- */
@@ -941,4 +884,37 @@ html, body { overflow-x: hidden; }
   .fp-row { height: 40px; grid-template-columns: minmax(0, 1fr) 1em 44px; }
   .fp-meta { display: none; }
   .fp-fav { width: 44px; height: 40px; }
+}
+
+/* ---------- app shell: menus · options bar · dock columns + canvas (src/ui/dock) ---------- */
+html, body { height: 100%; }
+body { overflow: hidden; }
+.app-shell { display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 100vh; height: 100dvh; }
+.menubar { display: flex; align-items: center; gap: 8px; padding: 4px 8px; min-width: 0; overflow-x: auto; }
+.menubar .topbar-actions { margin-right: auto; }
+.optionsbar { display: flex; align-items: center; min-width: 0; overflow-x: auto; padding: 0 8px; }
+.optionsbar .media-bar { flex: 1; }
+.workspace { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; min-height: 0; }
+.dock-col { width: var(--col-w); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.dock-block { display: flex; flex-direction: column; flex-basis: 0; min-height: 0; }
+.dock-head { display: flex; flex-wrap: wrap; }
+.dock-tab { display: inline-flex; align-items: center; gap: 4px; }
+.dock-tab .ico { width: 14px; height: 14px; }
+.dock-content { flex: 1; min-height: 0; overflow: auto; }
+.fx-tools { display: flex; gap: 6px; }
+.panel-body { display: flex; flex-direction: column; gap: 10px; padding: 8px; }
+.motion-box:not([hidden]) + .panel-empty { display: none; }
+.canvas-area { min-width: 0; min-height: 0; display: grid; }
+.canvas-area .viewer { aspect-ratio: auto; max-height: none; height: 100%; border-radius: 0; }
+
+/* Phone (before phase 6): canvas first, then the panels, page scrolls. */
+@media (max-width: 768px) {
+  body { overflow: auto; }
+  .app-shell { height: auto; }
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .canvas-area { order: -1; height: 62vh; }
+  .menubar-export { order: -1; }
+  .dock-col { width: auto; overflow: visible; }
+  .dock-block { flex-basis: auto; }
+  .dock-content { overflow: visible; }
 }
