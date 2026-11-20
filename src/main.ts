@@ -26,6 +26,8 @@ import { LayersPanel } from './ui/layers';
 import { hydrateIcons } from './ui/icons';
 import { initCollapsibles } from './ui/collapse';
 import { initShell } from './ui/shell';
+import { MenuBar, type MenuDef, type MenuEntryDef } from './ui/menubar';
+import { canvasSizeDialog, imageSizeDialog, shortcutsDialog } from './ui/docdialogs';
 import { ExportUI } from './ui/exportui';
 import { GifSearchPanel } from './ui/gifsearch';
 import { AnimClock } from './media/animclock';
@@ -687,8 +689,6 @@ function afterChange(full: boolean, docTouched = false): void {
   stages.sync();
   miniRewire.sync();
   if (rewire.isOpen) rewire.sync();
-  ($('btn-undo') as HTMLButtonElement).disabled = !history.canUndo;
-  ($('btn-redo') as HTMLButtonElement).disabled = !history.canRedo;
 }
 
 function updatePair(): void {
@@ -882,7 +882,6 @@ fileInput.addEventListener('change', () => {
   fileInput.value = '';
   if (fs.length) void importFiles(fs);
 });
-$('btn-import').addEventListener('click', pickFile);
 $('btn-empty').addEventListener('click', pickFile);
 $('btn-sample').addEventListener('click', async () => {
   await addImageLayer(await makeSampleImage(), 'Carta de ajuste');
@@ -1287,7 +1286,6 @@ projectFile.addEventListener('change', async () => {
 $('btn-save').addEventListener('click', () => void saveProject(false));
 $('btn-save-new').addEventListener('click', () => void saveProject(true));
 $('btn-project-import').addEventListener('click', () => projectFile.click());
-$('btn-capture').addEventListener('click', () => void saveProject(true));
 
 /* ------------------------------ export ------------------------------ */
 async function exportImage(type: 'image/png' | 'image/jpeg', d: DocState = doc): Promise<void> {
@@ -1614,8 +1612,6 @@ $('btn-fx-clear').addEventListener('click', () => {
   if (l) clearLayerFx(l.id);
 });
 
-$('btn-undo').addEventListener('click', undo);
-$('btn-redo').addEventListener('click', redo);
 initCollapsibles(document.body);
 
 /* ------------------------------ effects of the active layer ------------------------------ */
@@ -1654,6 +1650,22 @@ window.addEventListener('keydown', (e) => {
   // The export dialog / progress own the keyboard (Esc is handled there).
   if (exportUi.dialogOpen || exportUi.busy || gifSearch.isOpen) return;
   const mod = e.ctrlKey || e.metaKey;
+  if (menuBar.isOpen) return;
+  if (mod && e.altKey && e.key.toLowerCase() === 'n') {
+    e.preventDefault();
+    newDocument();
+    return;
+  }
+  if (mod && e.altKey && e.key.toLowerCase() === 'i') {
+    e.preventDefault();
+    if (doc.layers.length) imageSizeDialog(docHost);
+    return;
+  }
+  if (mod && !e.altKey && e.key.toLowerCase() === 'o') {
+    e.preventDefault();
+    projectFile.click();
+    return;
+  }
   if (mod && e.key.toLowerCase() === 'z') {
     e.preventDefault();
     if (e.shiftKey) redo();
@@ -1864,16 +1876,85 @@ const exportUi = new ExportUI(
       return t?.layer.fx?.motion ?? null;
     },
   },
-  $<HTMLButtonElement>('btn-export'),
-  $<HTMLButtonElement>('btn-export-menu'),
 );
 $('progress-cancel').addEventListener('click', () => exportUi.cancel());
 
 /* ------------------------------ GIF search (GifCities · Internet Archive) ------------------------------ */
 // Nothing is requested until the user searches inside the panel.
 const gifSearch = new GifSearchPanel({ toast, importFile: (f) => importFiles([f]) });
+
+/* ------------------------------ menu bar (Photopea reference, section 3) ------------------------------ */
+const docHost = { doc: () => doc, editDoc, clampDocSize, toast };
+const noDoc = (): string | null => (doc.layers.length ? null : 'Importa una imagen, GIF o vídeo primero');
+const MENUS: MenuDef[] = [
+  {
+    id: 'file',
+    label: 'Archivo',
+    items: () => [
+      { label: 'Nuevo', keys: 'Alt+Ctrl+N', action: newDocument, disabled: doc.layers.length ? null : 'El documento ya está vacío' },
+      { label: 'Abrir…', keys: 'Ctrl+O', action: () => projectFile.click() },
+      { label: 'Abrir y colocar…', keys: 'I', action: pickFile },
+      { label: 'Abrir Más', submenu: () => [{ label: 'Buscar GIF en GifCities…', keys: 'G', action: () => gifSearch.open() }] },
+      'sep',
+      { label: 'Guardar', keys: 'Ctrl+S', action: () => void saveProject(false), disabled: noDoc() },
+      { label: 'Guardar Más', submenu: () => [{ label: 'Guardar como proyecto nuevo', keys: 'Ctrl+Shift+S', action: () => void saveProject(true), disabled: noDoc() }] },
+      {
+        label: 'Exportar como',
+        submenu: () => exportUi.formats().map((f) => ({ label: f.label, ext: f.ext, disabled: f.why, action: () => exportUi.openDialog(f.format) })),
+      },
+    ],
+  },
+  {
+    id: 'edit',
+    label: 'Editar',
+    items: () => [
+      { label: 'Deshacer', keys: 'Ctrl+Z', action: undo, disabled: !history.canUndo },
+      { label: 'Rehacer', keys: 'Ctrl+Shift+Z', action: redo, disabled: !history.canRedo },
+      'sep',
+      { label: 'Cortar', keys: 'Ctrl+X', action: () => void copyLayer(true), disabled: doc.active ? null : 'Selecciona una capa' },
+      { label: 'Copiar', keys: 'Ctrl+C', action: () => void copyLayer(false), disabled: doc.active ? null : 'Selecciona una capa' },
+      { label: 'Pegar', keys: 'Ctrl+V', action: pasteClip, disabled: clip ? null : 'No hay ninguna capa copiada' },
+    ],
+  },
+  {
+    id: 'image',
+    label: 'Imagen',
+    items: () => [
+      { label: 'Tamaño de lienzo…', action: () => canvasSizeDialog(docHost), disabled: noDoc() },
+      { label: 'Tamaño de la imagen…', keys: 'Alt+Ctrl+I', action: () => imageSizeDialog(docHost), disabled: noDoc() },
+      {
+        label: 'Transformar',
+        disabled: noDoc(),
+        submenu: () => [
+          { label: 'Rotar 90° a la izquierda', action: () => layersPanel.docAction('rot-l') },
+          { label: 'Rotar 90° a la derecha', action: () => layersPanel.docAction('rot-r') },
+          { label: 'Voltear horizontal', action: () => layersPanel.docAction('flip-h') },
+          { label: 'Voltear vertical', action: () => layersPanel.docAction('flip-v') },
+        ],
+      },
+      { label: 'Recortar', action: () => layersPanel.docAction('crop-active'), disabled: noDoc() ?? (doc.active ? null : 'Selecciona una capa: el lienzo se recorta a ella') },
+      { label: 'Mostrar todo', action: () => layersPanel.docAction('crop-all'), disabled: noDoc() },
+    ],
+  },
+  {
+    id: 'view',
+    label: 'Ver',
+    items: () => [
+      { label: 'Acercar', keys: 'Ctrl++', action: () => viewKey('+'), disabled: noDoc() },
+      { label: 'Alejar', keys: 'Ctrl+−', action: () => viewKey('-'), disabled: noDoc() },
+      { label: 'Encajar en pantalla', keys: 'Ctrl+0', action: () => viewKey('0'), disabled: noDoc() },
+      { label: 'Píxeles reales', keys: 'Ctrl+1', action: () => viewKey('1'), disabled: noDoc() },
+    ],
+  },
+  {
+    id: 'window',
+    label: 'Ventana',
+    items: (): MenuEntryDef[] => shell.registry.ids().map((id) => ({ label: shell.registry.get(id)!.title, checked: shell.visible(id), action: () => shell.toggle(id) })),
+  },
+  { id: 'shortcuts', label: 'Atajos', action: shortcutsDialog },
+];
+const menuBar = new MenuBar($('menus'), MENUS);
 document.body.append(gifSearch.el);
-$('btn-gifsearch').addEventListener('click', () => gifSearch.open());
 function layerEdit(id: string, fn: (l: Layer) => void): void {
   editDoc((d) => {
     const l = getLayer(d, id);
@@ -2042,7 +2123,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 /** New empty document (undoable; the gallery is kept). */
-$('btn-new').addEventListener('click', () => {
+function newDocument(): void {
   if (!doc.layers.length) return;
   history.push(cloneDoc(doc));
   doc = { ...emptyDoc(), bg: doc.bg, transparent: doc.transparent };
@@ -2050,7 +2131,7 @@ $('btn-new').addEventListener('click', () => {
   savedJson = '';
   afterChange(true, true);
   toast('Documento nuevo (Ctrl+Z lo deshace)');
-});
+}
 
 /* ------------------------------ debug / test API ------------------------------ */
 async function hashPixels(img: ImageData): Promise<string> {

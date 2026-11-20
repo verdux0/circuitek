@@ -75,24 +75,7 @@ export class LayersPanel {
       </div>
       <ol class="layer-list" aria-label="Capas (la de arriba se dibuja encima)"></ol>
       <p class="layer-empty">Sin capas. Importa una o varias fotos: cada una será una capa.</p>
-      <div class="layer-props"></div>
-      <details class="doc-props sub" data-sub="doc">
-        <summary>${ico('chevron', 'sub-chev')}${ico('frame')} Lienzo</summary>
-        <div class="prop-grid">
-          <label class="prop"><span>ANCHO</span><input type="number" data-doc="w" min="1" step="1"></label>
-          <label class="prop"><span>ALTO</span><input type="number" data-doc="h" min="1" step="1"></label>
-          <label class="prop prop-color"><span>FONDO</span><input type="color" data-doc="bg"></label>
-          <label class="prop-check" title="Sin fondo: las zonas vacías quedan transparentes en el visor y al exportar PNG, GIF y vídeo (WebM)"><input type="checkbox" data-doc="transparent"> Fondo transparente</label>
-        </div>
-        <div class="btn-grid btn-grid-6">
-          <button class="hw-btn icon-sm" data-doc-act="rot-l" aria-label="Girar el lienzo 90° a la izquierda" title="Girar el lienzo 90° a la izquierda">${ico('rot-l')}</button>
-          <button class="hw-btn icon-sm" data-doc-act="rot-r" aria-label="Girar el lienzo 90° a la derecha" title="Girar el lienzo 90° a la derecha">${ico('rot-r')}</button>
-          <button class="hw-btn icon-sm" data-doc-act="flip-h" aria-label="Espejo horizontal del lienzo" title="Espejo horizontal del lienzo">${ico('flip-h')}</button>
-          <button class="hw-btn icon-sm" data-doc-act="flip-v" aria-label="Espejo vertical del lienzo" title="Espejo vertical del lienzo">${ico('flip-v')}</button>
-          <button class="hw-btn icon-sm" data-doc-act="crop-active" aria-label="Recortar el lienzo a la capa activa" title="Recortar el lienzo a la capa activa">${ico('crop')}</button>
-          <button class="hw-btn icon-sm" data-doc-act="crop-all" aria-label="Ajustar el lienzo a todas las capas visibles" title="Ajustar el lienzo a todas las capas visibles">${ico('fit')}</button>
-        </div>
-      </details>`;
+      <div class="layer-props"></div>`;
     this.list = this.el.querySelector('.layer-list')!;
     this.props = this.el.querySelector('.layer-props')!;
 
@@ -140,7 +123,7 @@ export class LayersPanel {
 
   private onClick(e: Event): void {
     const t = e.target as HTMLElement;
-    const btn = t.closest<HTMLElement>('[data-act], [data-doc-act], [data-row-act]');
+    const btn = t.closest<HTMLElement>('[data-act], [data-row-act]');
     const row = t.closest<HTMLElement>('.layer-row');
     if (btn?.dataset.act === 'add') return this.host.pickFiles();
     if (btn?.dataset.act === 'add-text') return this.host.addTextLayer();
@@ -164,7 +147,6 @@ export class LayersPanel {
       return;
     }
     if (row && !btn) return this.host.select(row.dataset.id!);
-    if (btn?.dataset.docAct) return this.docAction(btn.dataset.docAct);
     if (btn?.dataset.act) this.layerAction(btn.dataset.act);
   }
 
@@ -248,7 +230,8 @@ export class LayersPanel {
     }, 'once');
   }
 
-  private docAction(act: string): void {
+  /** Canvas operations (Imagen menu): rotate, mirror, crop to the active / all layers. */
+  docAction(act: 'rot-l' | 'rot-r' | 'flip-h' | 'flip-v' | 'crop-active' | 'crop-all'): void {
     if (act === 'crop-active' && !this.active()) return this.host.toast('Selecciona una capa');
     this.host.editDoc((d) => {
       switch (act) {
@@ -323,29 +306,6 @@ export class LayersPanel {
   private onInput(e: Event, phase: 'live' | 'end'): void {
     const t = e.target as HTMLInputElement | HTMLSelectElement;
     const prop = t.dataset.prop;
-    const docKey = t.dataset.doc;
-    if (docKey) {
-      if (docKey === 'transparent') {
-        if (phase !== 'end') return;
-        const on = (t as HTMLInputElement).checked;
-        this.host.editDoc((d) => {
-          if (on) d.transparent = true;
-          else delete d.transparent;
-        }, 'once');
-        return;
-      }
-      if (phase === 'live' && docKey !== 'bg') return;
-      this.host.editDoc((d) => {
-        if (docKey === 'bg') d.bg = t.value;
-        else {
-          const v = Math.round(Number(t.value));
-          if (!(v >= 1)) return;
-          const [w, h] = this.host.clampDocSize(docKey === 'w' ? v : d.w, docKey === 'h' ? v : d.h);
-          resizeDoc(d, w, h);
-        }
-      }, phase);
-      return;
-    }
     const textKey = t.dataset.text as keyof TextProps | undefined;
     if (textKey) {
       const l = this.active();
@@ -514,18 +474,10 @@ export class LayersPanel {
   }
 
   private syncFields(): void {
-    const d = this.host.doc();
     const set = (el: HTMLInputElement | HTMLSelectElement | null, v: string) => {
       if (el && document.activeElement !== el && el.value !== v) el.value = v;
     };
     const q = <T extends HTMLElement>(s: string) => this.el.querySelector<T>(s);
-    set(q('[data-doc="w"]'), String(d.w));
-    set(q('[data-doc="h"]'), String(d.h));
-    set(q('[data-doc="bg"]'), d.bg);
-    const tr = q<HTMLInputElement>('[data-doc="transparent"]');
-    if (tr) tr.checked = !!d.transparent;
-    const bgIn = q<HTMLInputElement>('[data-doc="bg"]');
-    if (bgIn) bgIn.disabled = !!d.transparent;
     const l = this.active();
     if (!l) return;
     const r1 = (n: number) => String(Math.round(n * 10) / 10);

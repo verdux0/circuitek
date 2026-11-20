@@ -5,7 +5,7 @@
  */
 import type { DocState } from '../doc';
 import type { Motion } from '../model';
-import type { ContextMenu, MenuEntry } from './contextmenu';
+import type { ContextMenu } from './contextmenu';
 import { ico } from './icons';
 import {
   DEFAULT_TEMPLATE, EXT, GIF_EXACT_FPS, defaultSettings, estimateGifBytes, fmtBytes, mp4Bitrate, renderFileName, sanitizeSettings,
@@ -51,7 +51,7 @@ const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', 
 const fmtNum = (v: number, d = 1): string => (Math.round(v * 10 ** d) / 10 ** d).toLocaleString('es-ES');
 
 export class ExportUI {
-  /** Saved defaults (what the main button uses). */
+  /** Saved defaults: the values every export window starts with. */
   defaults: ExportSettings = loadDefaults();
   private folder: FileSystemDirectoryHandle | null = null;
   private caps: VideoCaps | null = null;
@@ -63,19 +63,11 @@ export class ExportUI {
   private running: AbortController | null = null;
   private dialog: HTMLElement | null = null;
 
-  constructor(private host: ExportUiHost, private main: HTMLButtonElement, private arrow: HTMLButtonElement) {
+  /** Opened from Archivo → Exportar como ▸ (see formats()). */
+  constructor(private host: ExportUiHost) {
     void savedFolder().then((h) => (this.folder = h));
     void alphaVideoSupported().then((ok) => (this.alphaOk = ok));
     void videoCaps().then((c) => (this.caps = c)).catch(() => (this.caps = { container: null, reason: 'No se pudo comprobar el codificador de vídeo.' }));
-    main.addEventListener('click', () => void this.runDefault());
-    arrow.addEventListener('click', () => this.openMenu());
-    arrow.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        this.openMenu();
-      }
-    });
-    this.syncMain();
   }
 
   get busy(): boolean {
@@ -90,13 +82,6 @@ export class ExportUI {
     await rememberFolder(h);
   }
 
-  private syncMain(): void {
-    const f = this.defaults.format;
-    this.main.innerHTML = `${ico('download')}<span>Exportar</span><small>${LABEL[f]}</small>`;
-    this.main.setAttribute('aria-label', `Exportar como ${LABEL[f]} (predeterminado)`);
-    this.main.title = `Exportar como ${LABEL[f]} con los ajustes predeterminados · ▾ para otros formatos y opciones`;
-  }
-
   /** null = available; otherwise why not (shown next to the disabled entry). */
   why(format: ExportFormat): string | null {
     const doc = this.host.doc();
@@ -108,27 +93,22 @@ export class ExportUI {
     return null;
   }
 
-  private formatLabel(f: ExportFormat): string {
+  formatLabel(f: ExportFormat): string {
     if (f === 'mp4' && this.vcaps?.container === 'webm') return this.vcaps.alpha ? 'MP4 → WebM transparente' : 'MP4 → WebM (VP9)';
     return LABEL[f];
   }
 
-  openMenu(): void {
-    if (this.running) return;
-    const r = this.arrow.getBoundingClientRect();
-    const desc: Record<ExportFormat, string> = { png: 'Imagen sin pérdida', jpg: 'Imagen comprimida', gif: 'Animación en bucle', mp4: this.vcaps?.alpha ? 'Vídeo VP9 con transparencia' : this.vcaps?.container === 'webm' ? 'Vídeo VP9' : 'Vídeo H.264' };
-    const entries: MenuEntry[] = (['png', 'jpg', 'gif', 'mp4'] as ExportFormat[]).map((f) => {
-      const why = this.why(f);
-      return {
-        label: `<span class="ex-mi"><b>${this.formatLabel(f)}</b><small>${esc(why ?? desc[f])}</small></span>`,
-        icon: f === 'gif' || f === 'mp4' ? 'variants' : 'image',
-        disabled: !!why,
-        action: () => this.openDialog(f),
-      };
-    });
-    this.arrow.setAttribute('aria-expanded', 'true');
-    this.host.menu.open(r.right - 260, r.bottom, entries, 'Formatos de exportación');
-    this.host.menu.onClosed = () => this.arrow.setAttribute('aria-expanded', 'false');
+  /**
+   * Formats for Archivo → Exportar como ▸: label, file extension (shown in grey) and why it is
+   * not available right now (null = available).
+   */
+  formats(): { format: ExportFormat; label: string; ext: string; why: string | null }[] {
+    return (['png', 'jpg', 'gif', 'mp4'] as ExportFormat[]).map((f) => ({
+      format: f,
+      label: this.formatLabel(f),
+      ext: `.${f === 'mp4' && this.vcaps?.container === 'webm' ? 'webm' : EXT[f]}`,
+      why: this.running ? 'Ya hay una exportación en curso' : this.why(f),
+    }));
   }
 
   /* ------------------------------------ running ------------------------------------ */
@@ -173,7 +153,6 @@ export class ExportUI {
     const [w, h] = this.outSize(s);
     const ac = new AbortController();
     this.running = ac;
-    this.main.disabled = this.arrow.disabled = true;
     let sink: SaveSink | null = null;
     try {
       sink = await this.sinkFor(s, this.nameFor(s, w, h));
@@ -200,7 +179,6 @@ export class ExportUI {
       return false;
     } finally {
       this.running = null;
-      this.main.disabled = this.arrow.disabled = false;
     }
   }
 
@@ -333,7 +311,6 @@ export class ExportUI {
       }
       this.folder = null;
       await rememberFolder(null);
-      this.syncMain();
       this.host.toast('Exportación: ajustes de fábrica restablecidos');
       this.openDialog(format);
     });
@@ -380,7 +357,6 @@ export class ExportUI {
     } catch {
       /* storage unavailable: defaults last for this session */
     }
-    this.syncMain();
   }
 
   closeDialog(): void {
@@ -485,7 +461,7 @@ export class ExportUI {
               <label><input type="radio" name="ex-save" value="folder"${s.save === 'folder' ? ' checked' : ''} /> Carpeta <b id="ex-folder-name"></b></label>
               <button type="button" class="hw-btn hw-btn-sm" id="ex-pick">Elegir carpeta…</button>
             </div>` : `<p class="ex-warn ex-nofsa">Este navegador no deja elegir carpeta: el archivo se guarda donde decida el navegador (normalmente Descargas).</p>`}
-            <label class="ex-check"><input id="ex-default" type="checkbox" /> Usar como predeterminado (formato, ajustes, nombre y carpeta del botón Exportar)</label>
+            <label class="ex-check"><input id="ex-default" type="checkbox" /> Usar como predeterminado (ajustes, nombre y carpeta con los que se abre Exportar como)</label>
             <button type="button" class="hw-btn hw-btn-sm" id="ex-reset">Restablecer predeterminados</button>
           </fieldset>
         </div>

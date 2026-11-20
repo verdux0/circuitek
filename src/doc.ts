@@ -309,6 +309,26 @@ export function resizeDoc(d: DocState, w: number, h: number, dx?: number, dy?: n
   d.h = Math.max(1, Math.round(h));
 }
 
+/**
+ * Imagen → Tamaño de la imagen: scales the canvas AND its content to w × h (each layer's
+ * position and scale follow). With a different horizontal and vertical factor a rotated
+ * layer keeps its rotation and is only scaled along its own axes (no shear).
+ */
+export function scaleDoc(d: DocState, w: number, h: number): void {
+  const nw = Math.max(1, Math.round(w));
+  const nh = Math.max(1, Math.round(h));
+  const kx = nw / d.w;
+  const ky = nh / d.h;
+  for (const l of d.layers) {
+    l.x *= kx;
+    l.y *= ky;
+    l.scaleX *= kx;
+    l.scaleY *= ky;
+  }
+  d.w = nw;
+  d.h = nh;
+}
+
 /** Largest size ≤ the limits with the same aspect ratio. */
 export function clampSize(w: number, h: number, maxSide: number, maxMegapixels: number): [number, number] {
   const mp = (w * h) / 1e6;

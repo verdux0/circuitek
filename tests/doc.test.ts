@@ -14,7 +14,9 @@ import {
   makeLayer,
   moveLayer,
   normDeg,
+  resizeDoc,
   rotateDoc,
+  scaleDoc,
   type DocState,
   type Layer,
 } from '../src/doc';
@@ -134,5 +136,25 @@ describe('text layers', () => {
     const { cssFont } = await import('../src/text');
     expect(cssFont({ font: 'Press Start 2P', size: 20, bold: true, italic: true })).toBe('italic 700 20px "Press Start 2P", sans-serif');
     expect(cssFont({ font: 'monospace', size: 10, bold: false, italic: false })).toBe('400 10px monospace, sans-serif');
+  });
+});
+
+describe('Imagen menu: canvas size vs image size', () => {
+  it('Tamaño de la imagen scales the content with the canvas: layer bounds keep their place in %', () => {
+    const d = docWith({ x: 200, y: 150, w: 100, h: 50 });
+    const before = layerBounds(d.layers[0]);
+    scaleDoc(d, 1600, 1200);
+    expect([d.w, d.h]).toEqual([1600, 1200]);
+    const after = layerBounds(d.layers[0]);
+    close([[after.x, after.y, after.w, after.h]], [[before.x * 2, before.y * 2, before.w * 2, before.h * 2]]);
+  });
+  it('Tamaño de lienzo with an anchor shifts layers by (Δw·ax, Δh·ay) without scaling them', () => {
+    const d = docWith({ x: 100, y: 100, w: 50, h: 50 });
+    // Anchor top-left: content stays where it was.
+    resizeDoc(d, 1000, 900, 0, 0);
+    expect([d.layers[0].x, d.layers[0].y, d.layers[0].scaleX]).toEqual([100, 100, 1]);
+    // Anchor bottom-right: content moves by the whole difference.
+    resizeDoc(d, 1200, 1000, 200, 100);
+    expect([d.layers[0].x, d.layers[0].y]).toEqual([300, 200]);
   });
 });
