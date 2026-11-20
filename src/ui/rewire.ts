@@ -2,12 +2,12 @@
  * The rewire board: a CCD chip on a PCB. Drag (or tap-tap) between pins to bridge them.
  *
  * One component, two modes over the same state (`host.state()` / `host.edit()`):
- * - `full`: the detailed sheet (pop-up) with the big board, pair descriptions and resistance knobs.
+ * - `full`: the detailed sheet (pop-up) with the big board, pair descriptions and resistance sliders.
  * - `compact`: an inline mini board for the controls bar, with one slider per cable and an
  *   "expand" button that opens the full sheet.
  */
 import { MAX_CABLES, PINS, PIN_INFO, findPair, pairLabel, type GlitchState, type Pin } from '../model';
-import { Knob } from './knob';
+import { SliderRow } from './slider';
 import { ico } from './icons';
 
 export type RewireMode = 'full' | 'compact';
@@ -95,7 +95,7 @@ export class RewirePanel {
   private list: HTMLElement;
   private count: HTMLElement | null;
   private selected: Pin | null = null;
-  private knobs: Knob[] = [];
+  private knobs: SliderRow[] = [];
   /** Cable pairs the list was last built for: same pairs = update values in place (keeps focus). */
   private built = '';
 
@@ -125,7 +125,7 @@ export class RewirePanel {
         <div class="rw-side">
           <div class="rw-side-head">
             <span class="rw-side-title">CABLES <span class="rw-count"></span></span>
-            <button class="hw-btn icon-sm rw-expand" id="btn-rewire" data-act="expand" aria-label="Ampliar el recableado del CCD" title="Vista ampliada: descripciones y knobs (W)">${ico('maximize')}</button>
+            <button class="hw-btn icon-sm rw-expand" id="btn-rewire" data-act="expand" aria-label="Ampliar el recableado del CCD" title="Vista ampliada: descripciones y resistencias (W)">${ico('maximize')}</button>
           </div>
           <div class="rw-list rw-list-mini" aria-live="polite"></div>
         </div>`;
@@ -396,7 +396,7 @@ export class RewirePanel {
         </div>
         <div class="rw-knob"></div>
         <button class="hw-btn icon-sm" data-remove="${i}" aria-label="Quitar cable ${pair.a}+${pair.b}" title="Quitar cable">${ico('trash')}</button>`;
-      const k = new Knob({
+      const k = new SliderRow({
         label: 'RESIST.', min: 0, max: 100, value: c.amount, def: 100, size: 'sm',
         info: 'Resistencia del cable: cuánta señal pasa por este puente.',
         onInput: (v) => this.host.edit((st) => { if (st.cables[i]) st.cables[i].amount = v; }, 'live'),

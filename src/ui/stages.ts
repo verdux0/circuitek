@@ -1,6 +1,6 @@
 /** Extra signal stages after the CCD: one "module" card per stage with bypass, LED and knobs. */
 import { STAGES, stageActive, type GlitchState, type StageId } from '../model';
-import { Knob } from './knob';
+import { SliderRow } from './slider';
 import { ico } from './icons';
 
 export interface StagesHost {
@@ -10,7 +10,7 @@ export interface StagesHost {
 
 export class StagesPanel {
   readonly el: HTMLElement;
-  private knobs = new Map<string, Knob>();
+  private knobs = new Map<string, SliderRow>();
   private cards = new Map<StageId, HTMLElement>();
 
   constructor(private host: StagesHost) {
@@ -33,7 +33,7 @@ export class StagesPanel {
         <div class="module-knobs"></div>`;
       const box = card.querySelector('.module-knobs')!;
       for (const p of def.params) {
-        const k = new Knob({
+        const k = new SliderRow({
           label: p.label, min: p.min, max: p.max, def: p.def, step: p.step, value: p.def, size: 'sm', info: p.info,
           format: (v) => (p.names ? p.names[v] ?? String(v) : p.unit === '%' ? `${v}%` : p.unit ? `${v} ${p.unit}` : String(v)),
           onInput: (v) => this.host.edit((s) => { s.stages[def.id].p[p.id] = v; s.stages[def.id].on = true; }, 'live'),

@@ -7,7 +7,7 @@ import { History } from './history';
 import { FACTORY_PRESETS, randomState, variantOf } from './presets';
 import { cloneState, defaultState, encParams, findPair, parsePresetFile, sanitizeState, toPresetFile, type GlitchState } from './model';
 import { freshSeed } from './prng';
-import { Knob } from './ui/knob';
+import { SliderRow } from './ui/slider';
 import { CABLE_COLORS, RewirePanel } from './ui/rewire';
 import { StagesPanel } from './ui/stages';
 import { makeSampleImage } from './sample';
@@ -299,20 +299,20 @@ function toastUndo(msg: string): void {
   });
 }
 
-const effectKnob = new Knob({
+const effectSlider = new SliderRow({
   label: 'EFFECT', min: 0, max: 100, def: 50, value: cur().effect, size: 'md',
   info: 'Intensidad global de todos los puentes.',
   onInput: (v) => edit((s) => { s.effect = v; }, 'live'),
   onChange: () => edit(() => {}, 'end'),
 });
-const filterKnob = new Knob({
+const filterSlider = new SliderRow({
   label: 'FILTER', min: 0, max: 100, def: 50, value: cur().filter, size: 'md',
   info: 'Carácter del glitch: su efecto depende de cada par de pines (ver Recablear).',
   onInput: (v) => edit((s) => { s.filter = v; }, 'live'),
   onChange: () => edit(() => {}, 'end'),
 });
-$('knob-effect').append(effectKnob.el);
-$('knob-filter').append(filterKnob.el);
+$('knob-effect').append(effectSlider.el);
+$('knob-filter').append(filterSlider.el);
 
 const host = { state: cur, edit, toast };
 
@@ -684,8 +684,8 @@ function afterChange(full: boolean, docTouched = false): void {
     return;
   }
   const g = cur();
-  effectKnob.set(g.effect);
-  filterKnob.set(g.filter);
+  effectSlider.set(g.effect);
+  filterSlider.set(g.filter);
   seedInput.value = String(g.seed);
   syncFxLabel();
   stages.sync();
@@ -1424,8 +1424,8 @@ function syncAnimatedKnobs(): void {
   showKnobValues(stateAtFrame(l.fx, frame, loop, true, knobFrame));
 }
 function showKnobValues(s: GlitchState): void {
-  if (!effectKnob.el.classList.contains('active')) effectKnob.set(s.effect);
-  if (!filterKnob.el.classList.contains('active')) filterKnob.set(s.filter);
+  if (!effectSlider.el.classList.contains('active')) effectSlider.set(s.effect);
+  if (!filterSlider.el.classList.contains('active')) filterSlider.set(s.filter);
   stages.showValues(s);
   miniRewire.syncValues(s);
   if (rewire.isOpen) rewire.syncValues(s);
@@ -1442,13 +1442,13 @@ const mo = {
 };
 mo.seconds.innerHTML = MOTION_SECONDS.map((v) => `<option value="${v}">${v} s</option>`).join('');
 mo.fps.innerHTML = MOTION_FPS.map((v) => `<option value="${v}">${String(v).replace('.', ',')} fps</option>`).join('');
-const moIntensity = new Knob({
+const moIntensity = new SliderRow({
   label: 'INTENSIDAD', min: 0, max: 100, def: 50, value: 50, size: 'sm', format: (v) => `${v}%`,
   info: 'Cuánto se alejan los parámetros de su valor base.',
   onInput: (v) => edit((s) => { s.motion.intensity = v; }, 'live'),
   onChange: () => edit(() => {}, 'end'),
 });
-const moSpeed = new Knob({
+const moSpeed = new SliderRow({
   label: 'VELOCIDAD', min: 0, max: 100, def: 50, value: 50, size: 'sm', format: (v) => `${v}%`,
   info: 'Deriva: ciclos por bucle (1 a 4). Saltos: cada cuántos fotogramas saltan (12 a 2).',
   onInput: (v) => edit((s) => { s.motion.speed = v; }, 'live'),
@@ -1480,7 +1480,7 @@ function syncMotionPanel(): void {
   moSpeed.el.classList.toggle('mo-unused', flicker);
   mo.hint.textContent = flicker
     ? `Parpadeo: cambia el ruido y los parámetros marcados tiemblan en cada fotograma (Intensidad 0 = solo el ruido). ${motionFrames(m)} fotogramas por bucle.`
-    : `${motionFrames(m)} fotogramas por bucle. Los knobs giran solos mientras suena; si mueves uno, ese valor pasa a ser la base.`;
+    : `${motionFrames(m)} fotogramas por bucle. Los controles se mueven solos mientras suena; si mueves uno, ese valor pasa a ser la base.`;
 }
 
 /* ------------------------------ media bar (video / GIF transport) ------------------------------ */
@@ -1774,7 +1774,7 @@ function layerKey(e: KeyboardEvent, t: HTMLElement): boolean {
   const l = getLayer(doc, doc.active);
   if (!l) return false;
   // Knobs and other focused widgets use the arrows / Supr themselves.
-  const widget = t !== document.body && t.closest('.knob, .layers, .dock-col, [role="slider"]');
+  const widget = t !== document.body && t.closest('.slider-row, .layers, .dock-col, [role="slider"]');
   const step = e.shiftKey ? 10 : 1;
   const arrows: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
   if (arrows[e.key] && !widget) {
@@ -1782,7 +1782,7 @@ function layerKey(e: KeyboardEvent, t: HTMLElement): boolean {
     layersPanel.nudge(...arrows[e.key]);
     return true;
   }
-  if ((e.key === 'Delete' || e.key === 'Backspace') && !t.closest('.knob')) {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && !t.closest('.slider-row')) {
     e.preventDefault();
     layersPanel.deleteActive();
     return true;
