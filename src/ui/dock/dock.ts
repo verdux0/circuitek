@@ -8,12 +8,20 @@
  *   the document (code that looks elements up by id keeps working).
  * - Columns keep their width even when every panel in them is hidden: the canvas never moves
  *   when panels are opened or closed.
- * - Compact mode (phones, ≤ 768 px; Photopea reference, section 9): the columns turn into one
- *   column of icons, and a panel opens as a floating panel over the canvas (Layout.floating),
- *   with its block's tabs, a close button and a resize handle in the bottom-left corner.
+ * - Columns and blocks are resizable: a separator between each column and the canvas, and one
+ *   between neighbour blocks (separator.ts). Dragging previews the size directly on the elements
+ *   (no re-render); the layout is committed once, when the drag ends. A column folds to a strip
+ *   when dragged far below its minimum; a block folds to its header with its ▾ button.
+ * - Compact mode (phones, ≤ 768 px): the columns turn into one column of icons, and a panel opens
+ *   as a bottom sheet over the canvas (Layout.floating), with its block's tabs, a close button and
+ *   a grab handle on its top edge to drag its height.
  */
 import { ico } from '../icons';
-import { blockOf, isHidden, type FloatingPanel, type Layout, type PanelId } from './layout';
+import {
+  BLOCK_MIN, COL_FOLDED, COL_MIN, FOLD_SLACK, SHEET_MIN, blockOf, clampSheet, effectiveWidth, isHidden, maxColumnWidth, resetBlocks, resetColumn,
+  resizeBlocks, setBlockCollapsed, setColumnCollapsed, setColumnWidth, type FloatingPanel, type Layout, type PanelId,
+} from './layout';
+import { makeSeparator } from './separator';
 
 export interface DockHosts {
   /** One host element per column id. */
@@ -24,9 +32,6 @@ export interface DockHosts {
   float: HTMLElement;
 }
 
-const FLOAT_MIN_W = 220;
-const FLOAT_MIN_H = 160;
-const FLOAT_GAP = 4;
 
 export interface PanelDef {
   id: PanelId;
@@ -63,6 +68,14 @@ export class Dock {
     /** Matches on phones: compact mode. */
     private compactQuery: MediaQueryList,
   ) {
+    // Window resized: keep the columns inside the new limits (widths only, nothing re-rendered).
+    let rq = 0;
+    window.addEventListener('resize', () => {
+      if (!rq) rq = requestAnimationFrame(() => {
+        rq = 0;
+        this.applyWidths();
+      });
+    });
     compactQuery.addEventListener('change', () => {
       // Floating panels belong to the phone layout: back on a wide screen they dock again.
       if (!compactQuery.matches && this.current.floating.length) this.setLayout({ ...this.current, floating: [] });
@@ -93,10 +106,9 @@ export class Dock {
     if (cur) return;
     const area = this.hosts.float.getBoundingClientRect();
     const prev = this.current.floating[0];
-    const w = Math.max(FLOAT_MIN_W, Math.min(prev?.w ?? 300, area.width - FLOAT_GAP * 2));
-    const h = Math.max(FLOAT_MIN_H, Math.min(prev?.h ?? 560, area.height - FLOAT_GAP * 2));
-    // One floating panel at a time, next to the icon column (as in the reference, capture 13).
-    this.setLayout({ ...this.current, floating: [{ panel: id, x: Math.max(0, area.width - w - FLOAT_GAP), y: FLOAT_GAP, w, h }] });
+    // One bottom sheet at a time, as wide as the canvas; it keeps the last height the user chose.
+    const h = clampSheet(prev?.h ?? Math.round(area.height * 0.55), area.height);
+    this.setLayout({ ...this.current, floating: [{ panel: id, x: 0, y: Math.max(0, area.height - h), w: area.width, h }] });
   }
 
   setLayout(l: Layout): void {
@@ -120,6 +132,8 @@ export class Dock {
   }
 
   private render(): void {
+    // A separator with keyboard focus is rebuilt below: the focus goes to its replacement.
+    const focusedSep = (document.activeElement as HTMLElement | null)?.dataset?.sep;
     // Park every mounted panel first; the visible ones are moved back below.
     for (const el of this.bodies.values()) this.holder.append(el);
     const compact = this.compact;
@@ -131,19 +145,121 @@ export class Dock {
       if (!host) continue;
       host.replaceChildren();
       host.dataset.side = col.side;
-      host.style.setProperty('--col-w', `${col.width}px`);
+      host.style.setProperty('--col-w', `${effectiveWidth(this.current, col.id, window.innerWidth)}px`);
       host.classList.toggle('collapsed', col.collapsed);
       if (compact) continue;
-      for (const block of col.blocks) {
-        const tabs = block.tabs.filter((t) => visible(t) && !floatingIds.has(t));
-        if (!tabs.length) continue;
-        const active = tabs.includes(block.activeTab) ? block.activeTab : tabs[0];
-        host.append(this.renderBlock(block.id, tabs, active, block.size, (id) => this.activate(block.id, id)));
+      if (col.collapsed) host.append(this.foldedStrip(col.id, col.side));
+      else {
+        let prev: { id: string; el: HTMLElement } | null = null;
+        for (const block of col.blocks) {
+          const tabs = block.tabs.filter((t) => visible(t) && !floatingIds.has(t));
+          if (!tabs.length) continue;
+          const active = tabs.includes(block.activeTab) ? block.activeTab : tabs[0];
+          const el = this.renderBlock(block.id, tabs, active, block.size, (id) => this.activate(block.id, id), !!block.collapsed);
+          if (prev) host.append(this.blockSeparator(prev, { id: block.id, el }));
+          host.append(el);
+          prev = { id: block.id, el };
+        }
       }
+      host.append(this.columnSeparator(col.id, col.side, host));
     }
     this.renderIcons(compact, visible, floatingIds);
     this.hosts.float.replaceChildren();
     for (const f of floating) this.hosts.float.append(this.renderFloating(f, visible));
+    if (focusedSep) document.querySelector<HTMLElement>(`[data-sep="${focusedSep}"]`)?.focus();
+  }
+
+  /** Widths only (window resize): every column inside the limits of the new window. */
+  private applyWidths(): void {
+    for (const col of this.current.columns) this.hosts.columns[col.id]?.style.setProperty('--col-w', `${effectiveWidth(this.current, col.id, window.innerWidth)}px`);
+  }
+
+  /** A folded column: a strip with one button that unfolds it. */
+  private foldedStrip(id: string, side: 'left' | 'right'): HTMLElement {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'dock-unfold';
+    b.setAttribute('aria-label', side === 'left' ? 'Desplegar la columna izquierda' : 'Desplegar la columna derecha');
+    b.title = 'Desplegar panel';
+    b.innerHTML = ico(side === 'left' ? 'chevron-right' : 'chevron-left');
+    b.addEventListener('click', () => this.setLayout(setColumnCollapsed(this.current, id, false)));
+    return b;
+  }
+
+  /** The separator between a column and the canvas. */
+  private columnSeparator(id: string, side: 'left' | 'right', host: HTMLElement): HTMLElement {
+    const dir = side === 'left' ? 1 : -1;
+    const width = () => effectiveWidth(this.current, id, window.innerWidth);
+    let w0 = 0;
+    let dragging = false;
+    const sep = makeSeparator({
+      orientation: 'vertical',
+      label: side === 'left' ? 'Ancho de la columna izquierda' : 'Ancho de la columna derecha',
+      className: `dock-sep-col dock-sep-${side}`,
+      value: () => ({ now: width(), min: COL_MIN, max: maxColumnWidth(this.current, id, window.innerWidth) }),
+      move: (d) => {
+        if (!dragging) {
+          dragging = true;
+          w0 = width();
+        }
+        const w = w0 + d * dir;
+        const folding = w < COL_MIN - FOLD_SLACK;
+        const max = maxColumnWidth(this.current, id, window.innerWidth);
+        host.classList.toggle('fold-preview', folding);
+        host.style.setProperty('--col-w', `${folding ? COL_FOLDED : Math.min(max, Math.max(COL_MIN, w))}px`);
+      },
+      end: (d) => {
+        const base = dragging ? w0 : width();
+        dragging = false;
+        host.classList.remove('fold-preview');
+        if (d === 0) return this.applyWidths();
+        this.setLayout(setColumnWidth(this.current, id, base + d * dir, window.innerWidth));
+      },
+      reset: () => this.setLayout(resetColumn(this.current, id)),
+    });
+    sep.dataset.sep = `col-${id}`;
+    return sep;
+  }
+
+  /** The separator between two neighbour blocks of a column. */
+  private blockSeparator(a: { id: string; el: HTMLElement }, b: { id: string; el: HTMLElement }): HTMLElement {
+    let h0 = { a: 0, b: 0 };
+    let dragging = false;
+    const measure = () => ({ a: a.el.getBoundingClientRect().height, b: b.el.getBoundingClientRect().height });
+    const split = (d: number) => {
+      const total = h0.a + h0.b;
+      const ha = Math.min(total - BLOCK_MIN, Math.max(BLOCK_MIN, h0.a + d));
+      return { ha, hb: total - ha };
+    };
+    const sep = makeSeparator({
+      orientation: 'horizontal',
+      label: 'Altura de los paneles de la columna',
+      className: 'dock-sep-block',
+      value: () => {
+        const m = measure();
+        return { now: m.a, min: BLOCK_MIN, max: Math.max(BLOCK_MIN, m.a + m.b - BLOCK_MIN) };
+      },
+      move: (d) => {
+        if (!dragging) {
+          dragging = true;
+          h0 = measure();
+        }
+        const { ha, hb } = split(d);
+        a.el.style.flexGrow = String(ha);
+        b.el.style.flexGrow = String(hb);
+      },
+      end: (d) => {
+        if (!dragging) h0 = measure();
+        dragging = false;
+        // A folded block has no height to share: unfold it first (its ▾ button).
+        if (d === 0 || a.el.classList.contains('collapsed') || b.el.classList.contains('collapsed')) return this.render();
+        const { ha, hb } = split(d);
+        this.setLayout(resizeBlocks(this.current, a.id, b.id, ha, hb));
+      },
+      reset: () => this.setLayout(resetBlocks(this.current, a.id, b.id)),
+    });
+    sep.dataset.sep = `blk-${a.id}-${b.id}`;
+    return sep;
   }
 
   private renderIcons(compact: boolean, visible: (t: PanelId) => boolean, open: Set<PanelId>): void {
@@ -181,8 +297,12 @@ export class Dock {
     el.classList.add('dock-float');
     el.setAttribute('role', 'dialog');
     el.setAttribute('aria-label', this.registry.get(f.panel)!.title);
-    const place = (x: number, y: number, w: number, h: number) => Object.assign(el.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` });
-    place(f.x, f.y, f.w, f.h);
+    el.classList.add('dock-sheet');
+    const areaH = () => this.hosts.float.getBoundingClientRect().height;
+    const place = (h: number) => {
+      el.style.height = `${h}px`;
+    };
+    place(clampSheet(f.h, areaH()));
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'dock-float-close';
@@ -191,37 +311,31 @@ export class Dock {
     close.innerHTML = ico('close');
     close.addEventListener('click', () => this.toggleFloating(f.panel, false));
     el.querySelector('.dock-head')!.append(close);
-    // Resize handle in the bottom-left corner: the right edge stays next to the icon column.
-    const grip = document.createElement('span');
-    grip.className = 'dock-float-resize';
-    grip.setAttribute('aria-hidden', 'true');
-    let sx = 0;
-    let sy = 0;
-    let g = { ...f };
-    grip.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      grip.setPointerCapture(e.pointerId);
-      sx = e.clientX;
-      sy = e.clientY;
-      g = { ...f };
+    // Grab handle on the top edge: drag up / down to change the sheet's height.
+    let h0 = 0;
+    let dragging = false;
+    const commit = (h: number) => this.setLayout({ ...this.current, floating: this.current.floating.map((x) => (x.panel === f.panel ? { ...x, h } : x)) });
+    const grip = makeSeparator({
+      orientation: 'horizontal',
+      label: 'Altura del panel',
+      className: 'dock-sheet-grip',
+      value: () => ({ now: el.getBoundingClientRect().height, min: SHEET_MIN, max: Math.max(SHEET_MIN, areaH() - 40) }),
+      move: (d) => {
+        if (!dragging) {
+          dragging = true;
+          h0 = el.getBoundingClientRect().height;
+        }
+        place(clampSheet(h0 - d, areaH()));
+      },
+      end: (d) => {
+        const base = dragging ? h0 : el.getBoundingClientRect().height;
+        dragging = false;
+        commit(clampSheet(base - d, areaH()));
+      },
+      reset: () => commit(clampSheet(Math.round(areaH() * 0.55), areaH())),
     });
-    grip.addEventListener('pointermove', (e) => {
-      if (!grip.hasPointerCapture(e.pointerId)) return;
-      const area = this.hosts.float.getBoundingClientRect();
-      const right = f.x + f.w;
-      const w = Math.max(FLOAT_MIN_W, Math.min(right, f.w - (e.clientX - sx)));
-      const h = Math.max(FLOAT_MIN_H, Math.min(area.height - f.y, f.h + (e.clientY - sy)));
-      g = { ...f, x: right - w, w, h };
-      place(g.x, g.y, g.w, g.h);
-    });
-    const end = (e: PointerEvent) => {
-      if (!grip.hasPointerCapture(e.pointerId)) return;
-      grip.releasePointerCapture(e.pointerId);
-      this.setLayout({ ...this.current, floating: this.current.floating.map((x) => (x.panel === f.panel ? g : x)) });
-    };
-    grip.addEventListener('pointerup', end);
-    grip.addEventListener('pointercancel', end);
-    el.append(grip);
+    grip.dataset.sep = 'sheet';
+    el.prepend(grip);
     return el;
   }
 
@@ -232,9 +346,10 @@ export class Dock {
     document.getElementById(`dock-tab-${to}`)?.focus();
   }
 
-  private renderBlock(blockId: string, tabs: PanelId[], active: PanelId, size: number, onTab: (id: PanelId) => void): HTMLElement {
+  private renderBlock(blockId: string, tabs: PanelId[], active: PanelId, size: number, onTab: (id: PanelId) => void, collapsed = false): HTMLElement {
     const el = document.createElement('section');
     el.className = 'dock-block';
+    el.classList.toggle('collapsed', collapsed);
     el.dataset.block = blockId;
     el.style.flexGrow = String(size);
     const head = document.createElement('div');
@@ -262,6 +377,18 @@ export class Dock {
         document.getElementById(`dock-tab-${next}`)?.focus();
       });
       head.append(b);
+    }
+    // Docked blocks fold to their header (bottom sheets have their own close button).
+    if (!this.compact) {
+      const fold = document.createElement('button');
+      fold.type = 'button';
+      fold.className = 'dock-fold';
+      fold.setAttribute('aria-expanded', String(!collapsed));
+      fold.setAttribute('aria-label', collapsed ? 'Desplegar panel' : 'Plegar panel');
+      fold.title = collapsed ? 'Desplegar' : 'Plegar';
+      fold.innerHTML = ico('chevron');
+      fold.addEventListener('click', () => this.setLayout(setBlockCollapsed(this.current, blockId, !collapsed)));
+      head.append(fold);
     }
     const body = this.body(active)!;
     body.id = `dock-panel-${active}`;

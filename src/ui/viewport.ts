@@ -125,7 +125,14 @@ export class Viewport {
     window.addEventListener('keydown', (e) => this.updateCursor(e));
     window.addEventListener('keyup', (e) => this.updateCursor(e));
     window.addEventListener('blur', () => container.classList.remove('pan-ready'));
-    new ResizeObserver(() => this.resize()).observe(container);
+    // Dragging a panel separator resizes the viewer on every pointer move: once per frame is enough.
+    let rq = 0;
+    new ResizeObserver(() => {
+      if (!rq) rq = requestAnimationFrame(() => {
+        rq = 0;
+        this.resize();
+      });
+    }).observe(container);
   }
 
   /* ------------------------------ camera ------------------------------ */

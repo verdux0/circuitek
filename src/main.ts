@@ -1952,7 +1952,14 @@ const MENUS: MenuDef[] = [
   {
     id: 'window',
     label: 'Ventana',
-    items: (): MenuEntryDef[] => shell.registry.ids().map((id) => ({ label: shell.registry.get(id)!.title, checked: shell.visible(id), action: () => shell.toggle(id) })),
+    items: (): MenuEntryDef[] => [
+      ...shell.registry.ids().map((id): MenuEntryDef => ({ label: shell.registry.get(id)!.title, checked: shell.visible(id), action: () => shell.toggle(id) })),
+      'sep',
+      { label: 'Restablecer diseño de paneles', action: () => {
+        shell.resetLayout();
+        toast('Paneles con su tamaño y posición de fábrica');
+      } },
+    ],
   },
   { id: 'shortcuts', label: 'Atajos', action: shortcutsDialog },
 ];

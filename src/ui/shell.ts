@@ -4,7 +4,27 @@
  * this file only says what each panel is called and which icon it uses.
  */
 import { Dock, PanelRegistry, type PanelDef } from './dock/dock';
-import { defaultLayout, focusPanel, isHidden, setPanelVisible, type PanelId } from './dock/layout';
+import { defaultLayout, focusPanel, isHidden, sanitizeLayout, setPanelVisible, type Layout, type PanelId } from './dock/layout';
+
+/** Panel sizes, folds, tabs and hidden panels survive a reload (validated on load). */
+export const LAYOUT_KEY = 'circuitek:layout';
+
+function loadLayout(): Layout {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY);
+    return raw ? sanitizeLayout(JSON.parse(raw)) : defaultLayout();
+  } catch {
+    return defaultLayout(); // storage blocked or garbage
+  }
+}
+function saveLayout(l: Layout): void {
+  try {
+    // Bottom sheets belong to one phone session: not stored.
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify({ ...l, floating: [] }));
+  } catch {
+    /* storage full or blocked: the layout only lives in memory */
+  }
+}
 
 const PANELS: Omit<PanelDef, 'mount'>[] = [
   { id: 'effects', title: 'Efectos', icon: 'fx' },
@@ -23,6 +43,8 @@ export interface Shell {
   /** Ventana → panel. */
   toggle(id: PanelId, visible?: boolean): void;
   visible(id: PanelId): boolean;
+  /** Ventana → Restablecer diseño de paneles. */
+  resetLayout(): void;
 }
 
 export function initShell(): Shell {
@@ -44,9 +66,14 @@ export function initShell(): Shell {
       icons: document.getElementById('dock-icons')!,
       float: document.getElementById('dock-float')!,
     },
-    defaultLayout(),
+    loadLayout(),
     matchMedia('(max-width: 768px)'),
   );
+  let saveTimer = 0;
+  dock.onChange = (l) => {
+    clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(() => saveLayout(l), 300);
+  };
   document.getElementById('panel-sources')?.remove();
   return {
     dock,
@@ -58,5 +85,6 @@ export function initShell(): Shell {
     },
     toggle: (id, visible) => dock.setLayout(setPanelVisible(dock.layout, id, visible ?? isHidden(dock.layout, id))),
     visible: (id) => !isHidden(dock.layout, id),
+    resetLayout: () => dock.setLayout(defaultLayout()),
   };
 }
