@@ -7,7 +7,8 @@
  */
 import { ico } from './icons';
 import {
-  LIMIT_MAX, LIMIT_STEP, PAGE, SITE_URL, SearchError, downloadGif, resultFileName, search, type GifResult,
+  API_ORIGIN, BLOB_PREFIX, LIMIT_FIRST, PAGE, SITE_URL, SearchCache, SearchError, downloadGif, mayHaveMore, nextLimit, resultFileName, search,
+  type GifResult,
 } from '../gifsearch/client';
 
 export interface GifSearchHost {
@@ -16,7 +17,11 @@ export interface GifSearchHost {
   importFile(f: File): Promise<void>;
 }
 
-const DEBOUNCE = 400;
+const DEBOUNCE = 350;
+/** Thumbnails of the first rows load at high priority; the rest wait (each one is a whole GIF). */
+const EAGER_TILES = 8;
+/** Start fetching the next batch when fewer than this many pages are left to show. */
+const PREFETCH_PAGES = 3;
 
 export class GifSearchPanel {
   readonly el: HTMLElement;
@@ -31,10 +36,18 @@ export class GifSearchPanel {
   private searchAc: AbortController | null = null;
   private dlAc: AbortController | null = null;
   private query = '';
-  private limit = LIMIT_STEP;
+  private limit = LIMIT_FIRST;
   private all: GifResult[] = [];
   private shown = 0;
+  private lastBatch = 0;
   private restoreFocus: HTMLElement | null = null;
+  /** Finished searches: repeating one (or going back to it) is instant and needs no request. */
+  private cache = new SearchCache();
+  /** Background request for the next, larger batch (started when the shown results run low). */
+  private prefetch: Promise<boolean> | null = null;
+  /** Reveals the next page when the last tile scrolls near the view (infinite scroll). */
+  private io: IntersectionObserver | null = null;
+  private preconnected = false;
 
   constructor(private host: GifSearchHost) {
     const el = document.createElement('div');
@@ -111,15 +124,23 @@ export class GifSearchPanel {
       }
     });
     this.input.addEventListener('input', () => {
+      if (this.input.value.trim()) this.warmUp();
       clearTimeout(this.timer);
       this.timer = window.setTimeout(() => void this.run(this.input.value), DEBOUNCE);
     });
     this.el.querySelector('form')!.addEventListener('submit', (e) => {
       e.preventDefault();
       clearTimeout(this.timer);
-      void this.run(this.input.value, true);
+      // Enter on a new term searches at once; a term searched before comes from the cache.
+      void this.run(this.input.value);
     });
     this.more.addEventListener('click', () => void this.loadMore());
+    // Infinite scroll; the «Cargar más» button stays for keyboards and old browsers.
+    if (typeof IntersectionObserver !== 'undefined') {
+      this.io = new IntersectionObserver((es) => {
+        if (es.some((e) => e.isIntersecting) && !this.more.hidden && !this.more.disabled && this.isOpen) void this.loadMore();
+      }, { root: this.grid, rootMargin: '0px 0px 300px 0px' });
+    }
     this.el.querySelector('#gs-dl-cancel')!.addEventListener('click', () => this.dlAc?.abort());
     window.addEventListener('offline', () => this.isOpen && this.setStatus('Sin conexión: la búsqueda necesita internet.', 'offline'));
     window.addEventListener('online', () => this.isOpen && this.status.dataset.kind === 'offline' && this.setStatus('Conexión recuperada.', ''));
@@ -138,7 +159,23 @@ export class GifSearchPanel {
     }
   }
 
-  /** New search (previous one aborted). `force` repeats the same query. */
+  /**
+   * Opens a connection to both hosts while the user types (DNS + TLS ahead of the search).
+   * It only connects: no request and no text is sent until the search itself runs.
+   */
+  private warmUp(): void {
+    if (this.preconnected) return;
+    this.preconnected = true;
+    for (const href of [API_ORIGIN, new URL(BLOB_PREFIX).origin]) {
+      const l = document.createElement('link');
+      l.rel = 'preconnect';
+      l.href = href;
+      l.crossOrigin = 'anonymous';
+      document.head.append(l);
+    }
+  }
+
+  /** New search (previous one aborted). `force` repeats the same query against the network. */
   private async run(q: string, force = false): Promise<void> {
     const term = q.trim();
     if (!term) {
@@ -148,71 +185,136 @@ export class GifSearchPanel {
       return;
     }
     if (term === this.query && !force && this.all.length) return;
+    this.searchAc?.abort();
     this.query = term;
-    this.limit = LIMIT_STEP;
     this.clear();
-    await this.fetchPage(true);
+    const hit = force ? undefined : this.cache.get(term);
+    if (hit) {
+      this.all = hit.results.slice();
+      this.limit = hit.limit;
+      this.lastBatch = hit.lastBatch;
+      this.reveal(PAGE);
+      return;
+    }
+    this.limit = LIMIT_FIRST;
+    await this.fetchPage();
   }
 
   private clear(): void {
     this.all = [];
     this.shown = 0;
+    this.lastBatch = 0;
+    this.prefetch = null;
+    this.io?.disconnect();
     this.grid.replaceChildren();
     this.more.hidden = true;
   }
 
-  /** Fetches `limit` results for the current query; `fresh` = first page. */
-  private async fetchPage(fresh: boolean): Promise<void> {
+  /**
+   * Fetches `limit` results for the current query and adds the new ones. `quiet` = background
+   * prefetch: no «Buscando…» status, and an error is left for the next explicit «Cargar más».
+   * Returns true when the request succeeded.
+   */
+  private async fetchPage(quiet = false): Promise<boolean> {
     this.searchAc?.abort();
     const ac = new AbortController();
     this.searchAc = ac;
-    this.setStatus(`Buscando «${this.query}»…`, 'loading');
-    this.more.disabled = true;
+    const query = this.query;
+    const limit = this.limit;
+    if (!quiet) {
+      this.setStatus(`Buscando «${query}»…`, 'loading');
+      this.more.disabled = true;
+    }
     try {
-      const res = await search(this.query, this.limit, ac.signal);
-      if (ac.signal.aborted) return;
+      const res = await search(query, limit, ac.signal);
+      if (ac.signal.aborted || query !== this.query) return false;
       const known = new Set(this.all.map((r) => r.checksum));
-      const add = res.filter((r) => !known.has(r.checksum));
-      this.all.push(...add);
+      this.all.push(...res.filter((r) => !known.has(r.checksum)));
       this.lastBatch = res.length;
+      this.cache.set(query, { results: this.all.slice(), limit, lastBatch: res.length });
       if (!this.all.length) {
-        this.setStatus(`Sin resultados para «${this.query}». Prueba otra palabra (en inglés suele haber más).`, 'empty');
-        return;
+        this.setStatus(`Sin resultados para «${query}». Prueba otra palabra (en inglés suele haber más).`, 'empty');
+        return true;
       }
-      this.reveal(fresh ? PAGE : PAGE);
+      if (quiet) {
+        this.updateMore();
+        // Re-observing reports the current intersection: if the end is already in view, the
+        // next page appears without another scroll.
+        this.watchEnd();
+      }
+      else this.reveal(PAGE);
+      return true;
     } catch (err) {
-      if (ac.signal.aborted || (err as Error).name === 'AbortError') return;
+      if (ac.signal.aborted || (err as Error).name === 'AbortError' || quiet) return false;
       const e = err as SearchError;
       if (e.kind === 'offline') this.setStatus('Sin conexión: la búsqueda necesita internet.', 'offline', true);
       else this.setStatus(`${e.message}. Puedes reintentar o usar «Abrir gifcities.org».`, 'error', true);
+      return false;
     } finally {
       if (this.searchAc === ac) this.searchAc = null;
-      this.more.disabled = false;
+      if (!quiet) this.more.disabled = false;
     }
   }
 
-  private lastBatch = 0;
+  private get canFetch(): boolean {
+    return mayHaveMore({ limit: this.limit, lastBatch: this.lastBatch });
+  }
 
-  /** Shows the next `n` results; "Cargar más" asks the API for more when the list runs out. */
+  private updateMore(): void {
+    this.more.hidden = !(this.shown < this.all.length || this.canFetch);
+    this.setStatus(`${this.shown} de ${this.all.length}${this.canFetch ? '+' : ''} resultados para «${this.query}». Toca uno para usarlo.`, '');
+  }
+
+  /** Shows the next `n` results in one DOM write, and prefetches the next batch when they run low. */
   private reveal(n: number): void {
     const next = this.all.slice(this.shown, this.shown + n);
-    for (const r of next) this.grid.append(this.tile(r));
+    const frag = document.createDocumentFragment();
+    next.forEach((r, i) => frag.append(this.tile(r, this.shown + i < EAGER_TILES)));
+    this.grid.append(frag);
     this.shown += next.length;
-    const canFetch = this.lastBatch >= this.limit && this.limit < LIMIT_MAX;
-    this.more.hidden = !(this.shown < this.all.length || canFetch);
-    this.setStatus(`${this.shown} de ${this.all.length}${canFetch ? '+' : ''} resultados para «${this.query}». Toca uno para usarlo.`, '');
+    this.updateMore();
+    this.watchEnd();
+    // Fewer than PREFETCH_PAGES pages left and the API may have more: fetch the next batch in the
+    // background (it takes ~7 s), so scrolling / «Cargar más» finds it ready.
+    if (this.all.length - this.shown < PAGE * PREFETCH_PAGES && this.canFetch && !this.prefetch && !this.searchAc) {
+      this.limit = nextLimit(this.limit);
+      const p = this.fetchPage(true);
+      this.prefetch = p;
+      void p.then(() => {
+        if (this.prefetch === p) this.prefetch = null;
+      });
+    }
+  }
+
+  /** Observes the last tile, so scrolling near the end reveals the next page. */
+  private watchEnd(): void {
+    if (!this.io) return;
+    this.io.disconnect();
+    const last = this.grid.lastElementChild;
+    if (last) this.io.observe(last);
   }
 
   private async loadMore(): Promise<void> {
     if (this.shown < this.all.length) return this.reveal(PAGE);
-    if (this.lastBatch >= this.limit && this.limit < LIMIT_MAX) {
-      this.limit = Math.min(LIMIT_MAX, this.limit + LIMIT_STEP);
-      await this.fetchPage(false);
+    if (this.prefetch) {
+      this.setStatus(`Buscando más resultados de «${this.query}»…`, 'loading');
+      const ok = await this.prefetch;
+      if (this.shown < this.all.length) return this.reveal(PAGE);
+      if (!ok) {
+        // The background request failed: retry it in the open, with its error message.
+        await this.fetchPage();
+        return;
+      }
+    } else if (this.canFetch) {
+      this.limit = nextLimit(this.limit);
+      await this.fetchPage();
+      return;
     }
+    this.updateMore();
   }
 
   /** One result, built with the DOM API (remote strings never become HTML). */
-  private tile(r: GifResult): HTMLElement {
+  private tile(r: GifResult, eager = false): HTMLElement {
     const li = document.createElement('div');
     li.className = 'gs-tile';
     li.setAttribute('role', 'listitem');
@@ -223,8 +325,10 @@ export class GifSearchPanel {
     b.setAttribute('aria-label', `Usar GIF: ${label}`);
     b.title = `${label}${r.width ? ` · ${r.width}×${r.height}` : ''}`;
     const img = document.createElement('img');
-    img.loading = 'lazy';
+    img.loading = eager ? 'eager' : 'lazy';
     img.decoding = 'async';
+    // Off-screen thumbnails must not compete with the first rows for bandwidth.
+    img.fetchPriority = eager ? 'high' : 'low';
     img.referrerPolicy = 'no-referrer';
     img.crossOrigin = 'anonymous';
     img.alt = '';

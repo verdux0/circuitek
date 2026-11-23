@@ -15,11 +15,65 @@ export const API_PATH = '/api/v1/gifsearch';
 export const BLOB_PREFIX = 'https://blob.gifcities.org/gifcities/';
 export const SITE_URL = 'https://gifcities.org/';
 
-/** Results asked per request (the API has no server pagination, only `limit`). */
-export const LIMIT_STEP = 300;
+/**
+ * Results asked per request. The API has no server pagination, only `limit`, and it takes about
+ * 7 s to answer whatever the limit (measured 23-11-2026: TTFB ≈ 6.5–7.3 s for limit 60 and 300;
+ * the body itself downloads in ≈ 0.15 s). So the first request asks for a comfortable 300 (12
+ * pages), and the next one jumps straight to the maximum, fetched in the background while the
+ * user is still looking at the first batch.
+ */
+export const LIMIT_FIRST = 300;
 export const LIMIT_MAX = 1200;
-/** Results revealed per "Cargar más". */
-export const PAGE = 48;
+/** Results revealed at a time (each thumbnail is a whole GIF, so fewer at once = lighter). */
+export const PAGE = 24;
+/** Searches kept in memory (repeating one, or going back to it, needs no request). */
+export const CACHE_SIZE = 20;
+
+/** Next `limit` to ask for once the current results run low: ×4 (300 → 1200), capped at LIMIT_MAX. */
+export function nextLimit(limit: number): number {
+  return Math.min(LIMIT_MAX, Math.max(LIMIT_FIRST, Math.floor(limit) * 4));
+}
+
+/** Normalised cache key of a query (same rules as buildSearchUrl, case-insensitive). */
+export function queryKey(q: string): string {
+  return q.replace(/\s+/g, ' ').trim().slice(0, MAX_QUERY).toLowerCase();
+}
+
+/** What a finished search left: results, the limit asked for and how many the API returned. */
+export interface SearchEntry {
+  results: GifResult[];
+  limit: number;
+  lastBatch: number;
+}
+
+/** Small LRU of finished searches, by queryKey. */
+export class SearchCache {
+  private map = new Map<string, SearchEntry>();
+  constructor(private readonly max = CACHE_SIZE) {}
+  get(q: string): SearchEntry | undefined {
+    const k = queryKey(q);
+    const e = this.map.get(k);
+    if (e) {
+      // Refresh its place in the LRU order.
+      this.map.delete(k);
+      this.map.set(k, e);
+    }
+    return e;
+  }
+  set(q: string, e: SearchEntry): void {
+    const k = queryKey(q);
+    if (!k) return;
+    this.map.delete(k);
+    this.map.set(k, e);
+    while (this.map.size > this.max) this.map.delete(this.map.keys().next().value!);
+  }
+  get size(): number {
+    return this.map.size;
+  }
+}
+
+/** True when the API may have more results than `lastBatch` (it filled the whole limit). */
+export const mayHaveMore = (e: Pick<SearchEntry, 'limit' | 'lastBatch'>): boolean => e.lastBatch >= e.limit && e.limit < LIMIT_MAX;
 
 export const MAX_GIF_BYTES = 10 * 1024 * 1024;
 export const MAX_GIF_FRAMES = 600;
@@ -43,7 +97,7 @@ export interface GifResult {
 const CHECKSUM = /^[A-Z2-7]{32}$/;
 
 /** Builds the search URL; null for an empty query. The query is trimmed and capped. */
-export function buildSearchUrl(q: string, limit = LIMIT_STEP): string | null {
+export function buildSearchUrl(q: string, limit = LIMIT_FIRST): string | null {
   const term = q.replace(/\s+/g, ' ').trim().slice(0, MAX_QUERY);
   if (!term) return null;
   const u = new URL(API_PATH, API_ORIGIN);
@@ -145,7 +199,14 @@ export async function search(q: string, limit: number, signal?: AbortSignal, f: 
       throw new SearchError('No se pudo contactar con GifCities', 'network');
     }
     if (!res.ok) throw new SearchError(`GifCities respondió ${res.status}`, 'http');
-    const text = await res.text();
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      if (to.timedOut()) throw new SearchError('GifCities no responde (tiempo agotado)', 'timeout');
+      throw new SearchError('La respuesta de GifCities se cortó', 'network');
+    }
     if (text.length > 4 * 1024 * 1024) throw new SearchError('Respuesta demasiado grande', 'limit');
     try {
       return parseResults(JSON.parse(text));

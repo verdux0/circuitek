@@ -317,7 +317,7 @@ líneas corresponden al commit `7714dc4` (línea base), salvo que se indique otr
 - **Impacto:** el panel muestra un mensaje menos claro.
 - **Solución propuesta:** envolver la lectura igual que el `fetch`.
 - **Esfuerzo:** S · **Riesgo de regresión:** Bajo · **Dependencias:** —
-- **Estado:** Abierto
+- **Estado:** Resuelto (commit «perf(gifsearch)», test «search body read»)
 
 ## H-032 · La suite E2E de `tools/` está rota desde el rediseño de la UI
 

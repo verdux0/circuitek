@@ -21,8 +21,12 @@ anota en THIRD-PARTY.md como servicio usado, no como código reutilizado.
 - **Fuente:** la API JSON con CORS, sin desenfoque de miniaturas, con aviso de que no filtra contenido adulto y de los
   derechos. Botón de **flujo manual** (abrir gifcities.org y arrastrar/pegar el GIF) como respaldo si la API cae.
   Sin proxy ni infraestructura.
-- **Paginación:** se pide `limit=300` y se muestran 48 cada vez («Cargar más»). Si se agotan y la API devolvió el máximo,
-  se pide de nuevo con un `limit` mayor (hasta 1200), sin repetir resultados.
+- **Paginación (revisada el 24-11-2026):** la API tarda ≈ 7 s en responder sea cual sea el `limit` (TTFB medido: 6,5–7,3 s
+  con 60 y con 300; el cuerpo baja en ≈ 0,15 s), así que pedir menos no acelera nada y cada petición extra cuesta otros 7 s.
+  Se pide `limit=300`, se muestran **24** cada vez (cada miniatura es un GIF entero: menos a la vez = más ligero), con scroll
+  infinito y botón «Cargar más». Cuando quedan menos de 3 páginas se piden **1200 en segundo plano**. Las últimas 20
+  búsquedas quedan en memoria (repetir una = 0 peticiones). Al escribir se abre la conexión (`preconnect`, sin enviar
+  nada) y las primeras 8 miniaturas van con prioridad alta, el resto baja; `content-visibility` evita pintar las ocultas.
 - **Privacidad:** ninguna petición al cargar ni al abrir el panel; la primera sale al buscar. `fetch` con
   `credentials: 'omit'` y `referrerPolicy: 'no-referrer'`, miniaturas con `referrerpolicy="no-referrer"`. Solo se envía
   el texto buscado. Sin cookies ni analytics.

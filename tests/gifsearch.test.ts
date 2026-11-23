@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { GifWriter } from 'omggif';
 import fixtureJson from './fixtures/gifcities-computer.json';
 import {
-  LIMIT_MAX, MAX_GIF_BYTES, SearchError, buildSearchUrl, checkGif, downloadGif, gifUrl, isAllowedGifUrl, isHost, parseResults,
+  LIMIT_FIRST, LIMIT_MAX, MAX_GIF_BYTES, SearchCache, SearchError, buildSearchUrl, mayHaveMore, nextLimit, queryKey, checkGif, downloadGif, gifUrl, isAllowedGifUrl, isHost, parseResults,
   resultFileName, safePageUrl, search,
 } from '../src/gifsearch/client';
 
@@ -157,5 +157,47 @@ describe('GIF limits', () => {
     const p = downloadGif(url, ac.signal, undefined, slow);
     ac.abort();
     await expect(p).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+describe('paging and cache', () => {
+  it('first request, then x4 up to the maximum', () => {
+    expect(LIMIT_FIRST).toBe(300);
+    expect(nextLimit(LIMIT_FIRST)).toBe(LIMIT_MAX);
+    expect(nextLimit(100)).toBe(400);
+    expect(nextLimit(LIMIT_MAX)).toBe(LIMIT_MAX);
+    expect(nextLimit(0)).toBe(LIMIT_FIRST);
+  });
+  it('more results only when the API filled the whole limit', () => {
+    expect(mayHaveMore({ limit: 60, lastBatch: 60 })).toBe(true);
+    expect(mayHaveMore({ limit: 60, lastBatch: 42 })).toBe(false);
+    expect(mayHaveMore({ limit: LIMIT_MAX, lastBatch: LIMIT_MAX })).toBe(false);
+  });
+  it('query keys ignore case and extra spaces', () => {
+    expect(queryKey('  Under   Construction ')).toBe('under construction');
+  });
+  it('cache returns entries by normalised query and evicts the least recently used', () => {
+    const c = new SearchCache(2);
+    const e = (n: number) => ({ results: [], limit: n, lastBatch: 0 });
+    c.set('a', e(1));
+    c.set('b', e(2));
+    expect(c.get(' A ')?.limit).toBe(1); // refreshes "a"
+    c.set('c', e(3)); // evicts "b"
+    expect(c.get('b')).toBeUndefined();
+    expect(c.get('a')?.limit).toBe(1);
+    expect(c.get('c')?.limit).toBe(3);
+    expect(c.size).toBe(2);
+    c.set('   ', e(9));
+    expect(c.size).toBe(2);
+  });
+});
+
+describe('search body read', () => {
+  it('a response cut while reading is a network SearchError', async () => {
+    const body = new ReadableStream<Uint8Array>({ start(c) { c.error(new TypeError('network reset')); } });
+    const f = (async () => new Response(body, { status: 200 })) as unknown as typeof fetch;
+    const err = await search('computer', 60, undefined, f).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SearchError);
+    expect((err as SearchError).kind).toBe('network');
   });
 });
