@@ -43,6 +43,10 @@ export interface FontPickerHost {
 
 const ROW = 40;
 const OVERSCAN = 6;
+/** The open list never gets shorter than this many rows, even in a very short panel. */
+const MIN_ROWS = 4;
+/** Space (px) kept under the open list inside its panel. */
+const MARGIN = 8;
 const DEBOUNCE = 120;
 /** Browsing with the arrows stops being "live" after this pause: one undo step. */
 const COMMIT_MS = 700;
@@ -83,6 +87,7 @@ export class FontPicker {
   private recent: string[] = readList(store(), RECENT_KEY, 12);
   private timer = 0;
   private commitTimer = 0;
+  private fitTimer = 0;
   private raf = 0;
   private rows = new Map<number, HTMLElement>();
   private io: IntersectionObserver;
@@ -148,9 +153,30 @@ export class FontPicker {
     this.pop.hidden = false;
     this.trigger.setAttribute('aria-expanded', 'true');
     this.el.classList.add('open');
-    if (focusSearch) this.input.focus();
+    if (focusSearch) this.input.focus({ preventScroll: true });
     await this.ensureBuilt();
+    this.fitToPanel();
     this.markCurrent(true);
+  }
+
+  /**
+   * The list lives inside a dock panel of limited height (Propiedades). Opened under the font
+   * field it used to fall below the panel's visible area, so it looked empty. Fit the list to
+   * the space the panel has (never fewer than MIN_ROWS rows, never more than its CSS height)
+   * and scroll the panel so the whole list is in view.
+   */
+  private fitToPanel(): void {
+    if (this.pop.hidden) return;
+    const scroller = this.el.closest<HTMLElement>('.dock-content');
+    this.list.style.maxHeight = '';
+    if (scroller) {
+      const extra = this.pop.offsetHeight - this.list.offsetHeight; // search bar, status…
+      const room = scroller.clientHeight - this.trigger.offsetHeight - extra - MARGIN;
+      this.list.style.maxHeight = `${Math.max(MIN_ROWS * ROW, room)}px`;
+    }
+    // Field + list now fit in the panel: bring both into view (moves only as much as needed).
+    this.el.scrollIntoView({ block: 'nearest' });
+    this.render();
   }
 
   collapse(focusTrigger = true): void {
@@ -430,6 +456,11 @@ export class FontPicker {
         else this.choose(this.active, 'once');
         this.collapse();
       }
+    });
+    // The panel changes height with the window (and the dock layout): refit while open.
+    window.addEventListener('resize', () => {
+      clearTimeout(this.fitTimer);
+      this.fitTimer = window.setTimeout(() => this.fitToPanel(), 150);
     });
     this.list.addEventListener('focusout', () => {
       if (this.commitTimer) this.commit();

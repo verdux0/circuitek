@@ -328,3 +328,13 @@ líneas corresponden al commit `7714dc4` (línea base), salvo que se indique otr
 - **Solución propuesta:** actualizar los selectores a la UI actual (paneles del dock, menú «Archivo ▸ Exportar como») y añadir una prueba de humo pequeña a la CI. Esta pasada añade `tools/smoke_audit.py` como primer paso.
 - **Esfuerzo:** L · **Riesgo de regresión:** Bajo · **Dependencias:** —
 - **Estado:** Abierto (parcial: prueba de humo nueva)
+
+## H-033 · La lista de fuentes queda fuera de la vista del panel Propiedades
+
+- **Categoría:** Arquitectura (UI) · **Severidad:** Alta · **Verificación:** Confirmado (captura en Chrome: solo asomaba una fila)
+- **Ubicación:** `src/ui/fontpicker.ts` (`expand`); `src/styles.css:445` (`.fp-list` con altura fija de 9 filas); `src/styles.css:48` (`.dock-content` con scroll propio)
+- **Descripción:** desde el rediseño del dock, el selector vive en un bloque de altura limitada. Al abrirlo, la lista se desplegaba por debajo del borde visible del panel y el bloque «Capas» la tapaba: parecía que no había fuentes (el catálogo y los archivos sí cargaban: 409 familias, respuestas 200).
+- **Impacto:** no se podía elegir fuente sin descubrir que había que hacer scroll dentro del panel.
+- **Solución aplicada:** al abrir (y al redimensionar), la lista se ajusta al alto disponible del panel (mínimo 4 filas) y el panel se desplaza para mostrar el campo y la lista enteros.
+- **Esfuerzo:** S · **Riesgo de regresión:** Bajo · **Dependencias:** —
+- **Estado:** Resuelto (commit «fix(fuentes)»)
