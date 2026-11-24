@@ -1,7 +1,11 @@
-import { COMP_FRAG, FRAG, LAYER_FRAG, LAYER_VERT, VERT } from './shaders';
+import { COMP_FRAG, FRAG, FX_FRAG, LAYER_FRAG, LAYER_VERT, VERT } from './shaders';
 import { buildGpuPasses, encParams, encSeed, type EncParams, type GlitchState, type GpuPass } from '../model';
 import { BLENDS, layerMatrix, type DocState, type Layer } from '../doc';
 import { stateAtFrame } from '../motion';
+import { mixSeed } from '../prng';
+import {
+  CONTOURS, effectAngle, maskRadii, shadowOffset, styleActive, usesGlobalLight, type GlowFx, type InnerGlowFx, type ShadowFx,
+} from '../layerstyle';
 
 /**
  * WebGL2 layer compositor + glitch chain.
@@ -12,6 +16,11 @@ import { stateAtFrame } from '../motion';
  *                                    shared ping-pong pair → per-layer cache texture
  *     custom blend mode            → blend shader reads accumulator + layer, writes the other one
  *   global effects → passes over the accumulator → canvas
+ *
+ * Layer styles (layerstyle.ts) are part of the layer and come BEFORE its glitch passes, so the
+ * glitch also bends shadows and glows: inner effects are merged into the layer (FX_FRAG op 4);
+ * outer effects (drop shadow, outer glow) go through the same passes into their own cache
+ * textures and are blended onto the backdrop with their own blend mode, under the layer.
  *
  * Memory: the work textures (2 accumulators, tmp, 2 ping-pong) are shared by every layer;
  * only layers with their own effects keep a cache texture, at the render size, bounded by
@@ -32,6 +41,8 @@ interface TargetSet {
   p0: Target;
   p1: Target;
   used: number;
+  /** Layer-style work targets (mask ping-pong, effect, content ping-pong), created on first use. */
+  fx?: { m1: Target; m2: Target; e: Target; c1: Target; c2: Target };
 }
 interface SourceTex {
   tex: WebGLTexture;
@@ -54,6 +65,8 @@ interface CacheEntry extends Target {
   hasEnc?: boolean;
   /** Animated preview + encoder: GPU frames go here; the encoder reads them; `tex` keeps the last encoded frame. */
   side?: Target;
+  /** Outer effects of the layer style (bottom → top), after the layer's glitch passes, with their blend mode. */
+  outer?: { t: Target; blend: number }[];
 }
 
 /** What the renderer needs from the app to draw a layer. */
@@ -102,7 +115,7 @@ const BLEND_INDEX = new Map(BLENDS.map(([v], i) => [v as string, i]));
 export const CACHE_BUDGET = 256 * 1024 * 1024;
 
 export function layerHasFx(l: Layer): boolean {
-  return !!l.fx && (buildGpuPasses(l.fx).length > 0 || encParams(l.fx) !== null);
+  return (!!l.fx && (buildGpuPasses(l.fx).length > 0 || encParams(l.fx) !== null)) || styleActive(l.style);
 }
 
 export class GLRenderer {
@@ -112,6 +125,7 @@ export class GLRenderer {
   private pG: WebGLProgram;
   private pL: WebGLProgram;
   private pC: WebGLProgram;
+  private pF: WebGLProgram;
   private u = new Map<WebGLProgram, Record<string, WebGLUniformLocation | null>>();
   private sets = new Map<string, TargetSet>();
   private sources = new Map<string, SourceTex>();
@@ -138,6 +152,10 @@ export class GLRenderer {
     this.pG = this.link(VERT, FRAG, ['u_tex', 'u_pass', 'u_mode', 'u_amt', 'u_filter', 'u_p', 'u_seed', 'u_aspect']);
     this.pL = this.link(LAYER_VERT, LAYER_FRAG, ['u_tex', 'u_m', 'u_doc', 'u_opacity']);
     this.pC = this.link(VERT, COMP_FRAG, ['u_src', 'u_dst', 'u_opacity', 'u_mode']);
+    this.pF = this.link(VERT, FX_FRAG, [
+      'u_src', 'u_mask', 'u_fx', 'u_op', 'u_offset', 'u_invert', 'u_dir', 'u_radius', 'u_color', 'u_color2', 'u_gradient', 'u_opacity', 'u_noise',
+      'u_seed', 'u_contour', 'u_range', 'u_clip', 'u_center', 'u_mode',
+    ]);
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     const buf = gl.createBuffer();
@@ -209,6 +227,7 @@ export class GLRenderer {
     const s = this.sets.get(key);
     if (!s) return;
     for (const t of [s.accA, s.accB, s.tmp, s.p0, s.p1]) this.freeTarget(t);
+    if (s.fx) for (const t of Object.values(s.fx)) this.freeTarget(t);
     this.sets.delete(key);
   }
 
@@ -354,8 +373,7 @@ export class GLRenderer {
   }
 
   /** Composites a document-space layer texture onto the accumulator with its blend mode. */
-  private composite(tex: WebGLTexture, l: Layer, doc: DocState, set: TargetSet, acc: { cur: Target; other: Target }): void {
-    const mode = BLEND_INDEX.get(l.blend) ?? 0;
+  private composite(tex: WebGLTexture, l: Layer, doc: DocState, set: TargetSet, acc: { cur: Target; other: Target }, mode = BLEND_INDEX.get(l.blend) ?? 0): void {
     if (mode === 0) {
       this.drawQuad(tex, GLRenderer.docQuad(doc), doc, acc.cur.fb, set, l.opacity, true);
       return;
@@ -409,7 +427,9 @@ export class GLRenderer {
   /* ------------------------------ per-layer cache ------------------------------ */
 
   private cacheKey(l: Layer, ref: SourceRef, job: RenderJob): string {
-    return JSON.stringify([ref.key, ref.frame ?? null, ref.stamp ?? null, ref.noise ?? null, l.w, l.h, l.x, l.y, l.scaleX, l.scaleY, l.rotation, l.flipX, l.flipY, l.fx, job.w, job.h, job.doc.w, job.doc.h]);
+    const style = styleActive(l.style) ? l.style : null;
+    const light = usesGlobalLight(l.style) ? (job.doc.light?.angle ?? null) : null;
+    return JSON.stringify([ref.key, ref.frame ?? null, ref.stamp ?? null, ref.noise ?? null, l.w, l.h, l.x, l.y, l.scaleX, l.scaleY, l.rotation, l.flipX, l.flipY, l.fx, style, light, job.w, job.h, job.doc.w, job.doc.h]);
   }
 
   /**
@@ -422,6 +442,7 @@ export class GLRenderer {
     let e = this.caches.get(id);
     if (e && (e.w !== job.w || e.h !== job.h)) {
       if (e.side) this.freeTarget(e.side);
+      for (const o of e.outer ?? []) this.freeTarget(o.t);
       this.freeTarget(e);
       this.caches.delete(id);
       e = undefined;
@@ -441,13 +462,13 @@ export class GLRenderer {
     if (!final && enc && ref.noise !== undefined && e.hasEnc) {
       if (e.key === key || e.encBusy) return { entry: e, pending: null };
       e.side ??= this.emptyTarget(job.w, job.h);
-      this.placeAndRun(l, ref, job, set, fx, e.side.fb);
+      this.placeAndRun(l, ref, job, set, fx, e.side.fb, e);
       e.key = key;
       e.encDone = false;
       return { entry: e, pending: this.runLayerEncoder(id, e, enc, encSeed(fx), e.side.fb) };
     }
     if (e.key !== key) {
-      this.placeAndRun(l, ref, job, set, fx, e.fb);
+      this.placeAndRun(l, ref, job, set, fx, e.fb, e);
       e.key = key;
       e.encDone = false;
     }
@@ -459,14 +480,160 @@ export class GLRenderer {
     return { entry: e, pending: this.runLayerEncoder(id, e, enc, encSeed(fx)) };
   }
 
-  /** Places the layer in document space (tmp), then runs its own passes into `out`. */
-  private placeAndRun(l: Layer, ref: SourceRef, job: RenderJob, set: TargetSet, fx: GlitchState, out: WebGLFramebuffer): void {
+  /**
+   * Places the layer in document space (tmp), adds its style's inner effects, then runs its own
+   * passes into `out`. Outer effects run through the same passes into the entry's outer textures.
+   */
+  private placeAndRun(l: Layer, ref: SourceRef, job: RenderJob, set: TargetSet, fx: GlitchState, out: WebGLFramebuffer, e: CacheEntry): void {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, set.tmp.fb);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     this.drawQuad(this.sourceTex(ref), GLRenderer.layerQuad(l), job.doc, set.tmp.fb, set, 1, false);
-    this.runPasses(buildGpuPasses(fx), set.tmp.tex, out, set);
+    const passes = buildGpuPasses(fx);
+    const st = styleActive(l.style) ? l.style : null;
+    if (!st) {
+      for (const o of e.outer ?? []) this.freeTarget(o.t);
+      e.outer = undefined;
+      this.runPasses(passes, set.tmp.tex, out, set);
+      return;
+    }
+    const w = this.fxTargets(set);
+    const seed = l.fx?.seed ?? 0;
+    // Inner effects, front to back as in the dialog's list: inner glow first, inner shadow on top.
+    let content = set.tmp.tex;
+    let next = w.c1;
+    if (st.innerGlow.on) {
+      this.buildEffect('innerGlow', st.innerGlow, job, set, w, mixSeed(seed, 0x51));
+      this.mergeInner(content, w.e.tex, next, BLEND_INDEX.get(st.innerGlow.blend) ?? 0, set);
+      content = next.tex;
+      next = next === w.c1 ? w.c2 : w.c1;
+    }
+    if (st.innerShadow.on) {
+      this.buildEffect('innerShadow', st.innerShadow, job, set, w, mixSeed(seed, 0x52));
+      this.mergeInner(content, w.e.tex, next, BLEND_INDEX.get(st.innerShadow.blend) ?? 0, set);
+      content = next.tex;
+    }
+    this.runPasses(passes, content, out, set);
+    // Outer effects, bottom → top: drop shadow, then outer glow.
+    const outer: { key: 'dropShadow' | 'outerGlow'; blend: number }[] = [];
+    if (st.dropShadow.on) outer.push({ key: 'dropShadow', blend: BLEND_INDEX.get(st.dropShadow.blend) ?? 0 });
+    if (st.outerGlow.on) outer.push({ key: 'outerGlow', blend: BLEND_INDEX.get(st.outerGlow.blend) ?? 0 });
+    const old = e.outer ?? [];
+    for (const o of old.slice(outer.length)) this.freeTarget(o.t);
+    e.outer = outer.map((o, i) => {
+      const t = old[i]?.t ?? this.emptyTarget(e.w, e.h);
+      this.buildEffect(o.key, st[o.key], job, set, w, mixSeed(seed, o.key === 'dropShadow' ? 0x53 : 0x54));
+      this.runPasses(passes, w.e.tex, t.fb, set);
+      return { t, blend: o.blend };
+    });
+  }
+
+  private fxTargets(set: TargetSet): NonNullable<TargetSet['fx']> {
+    return (set.fx ??= {
+      m1: this.emptyTarget(set.w, set.h), m2: this.emptyTarget(set.w, set.h), e: this.emptyTarget(set.w, set.h),
+      c1: this.emptyTarget(set.w, set.h), c2: this.emptyTarget(set.w, set.h),
+    });
+  }
+
+  /** One FX_FRAG pass from `src` / `mask` into `out`. */
+  private fxPass(out: WebGLFramebuffer, set: TargetSet, src: WebGLTexture, mask: WebGLTexture | null, u: (u: Record<string, WebGLUniformLocation | null>) => void): void {
+    const gl = this.gl;
+    const loc = this.u.get(this.pF)!;
+    gl.useProgram(this.pF);
+    gl.disable(gl.BLEND);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, out);
+    gl.viewport(0, 0, set.w, set.h);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, src);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, mask ?? src);
+    // Every sampler of the program counts for WebGL's feedback-loop check, used or not: unit 2
+    // (u_fx) must never keep the effect texture this pass may be writing. mergeInner rebinds it.
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, src);
+    gl.uniform1i(loc.u_src, 0);
+    gl.uniform1i(loc.u_mask, 1);
+    gl.uniform1i(loc.u_fx, 2);
+    u(loc);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  /**
+   * Builds one effect of the style from the layer's alpha (set.tmp) into w.e (straight RGBA):
+   * mask (moved / inverted) → grow (spread / choke) → blur (size) → contour, colour, noise, clip.
+   * Px settings are document px × the render scale: the export at full size looks like the preview.
+   */
+  private buildEffect(kind: 'dropShadow' | 'innerShadow' | 'outerGlow' | 'innerGlow', f: ShadowFx | GlowFx, job: RenderJob, set: TargetSet, w: NonNullable<TargetSet['fx']>, seed: number): void {
+    const gl = this.gl;
+    const k = job.w / job.doc.w;
+    const inner = kind === 'innerShadow' || kind === 'innerGlow';
+    const shadow = kind === 'dropShadow' || kind === 'innerShadow';
+    let dx = 0;
+    let dy = 0;
+    if (shadow) [dx, dy] = shadowOffset(effectAngle(f as ShadowFx, job.doc.light), (f as ShadowFx).distance);
+    const glow = f as GlowFx;
+    const { grow, blur } = maskRadii(f.size, f.spread, !shadow && glow.technique === 'precise');
+    // 1. Mask: the layer's alpha (inverted for inner effects), moved away from the light.
+    this.fxPass(w.m1.fb, set, this.tmpTex(set), null, (u) => {
+      gl.uniform1i(u.u_op, 0);
+      gl.uniform2f(u.u_offset, dx / job.doc.w, -dy / job.doc.h);
+      gl.uniform1i(u.u_invert, inner ? 1 : 0);
+    });
+    // 2. Grow (separable max), 3. blur (separable gaussian), both ping-pong m1 ↔ m2.
+    const sep = (op: number, r: number) => {
+      if (r * k < 0.5) return;
+      this.fxPass(w.m2.fb, set, this.tmpTex(set), w.m1.tex, (u) => {
+        gl.uniform1i(u.u_op, op);
+        gl.uniform2f(u.u_dir, 1, 0);
+        gl.uniform1f(u.u_radius, r * k);
+      });
+      this.fxPass(w.m1.fb, set, this.tmpTex(set), w.m2.tex, (u) => {
+        gl.uniform1i(u.u_op, op);
+        gl.uniform2f(u.u_dir, 0, 1);
+        gl.uniform1f(u.u_radius, r * k);
+      });
+    };
+    sep(1, grow);
+    sep(2, blur);
+    // 4. Colour: contour, range, noise, opacity; clipped inside the layer or knocked out under it.
+    const [r1, g1, b1] = rgb(f.color);
+    const [r2, g2, b2] = rgb(shadow ? f.color : glow.color2);
+    const clip = inner ? 1 : kind === 'dropShadow' && (f as { knockout?: boolean }).knockout ? 2 : 0;
+    this.fxPass(w.e.fb, set, this.tmpTex(set), w.m1.tex, (u) => {
+      gl.uniform1i(u.u_op, 3);
+      gl.uniform3f(u.u_color, r1, g1, b1);
+      gl.uniform3f(u.u_color2, r2, g2, b2);
+      gl.uniform1i(u.u_gradient, !shadow && glow.fill === 'gradient' ? 1 : 0);
+      gl.uniform1f(u.u_opacity, f.opacity / 100);
+      gl.uniform1f(u.u_noise, f.noise / 100);
+      gl.uniform1ui(u.u_seed, seed >>> 0);
+      gl.uniform1i(u.u_contour, Math.max(0, CONTOURS.findIndex((c) => c[0] === f.contour)));
+      gl.uniform1f(u.u_range, shadow ? 50 : glow.range);
+      gl.uniform1i(u.u_clip, clip);
+      gl.uniform1i(u.u_center, kind === 'innerGlow' && (f as InnerGlowFx).source === 'center' ? 1 : 0);
+    });
+  }
+
+  private tmpTex(set: TargetSet): WebGLTexture {
+    return set.tmp.tex;
+  }
+
+  /** An inner effect (fx) over the layer (content) with its blend mode, into `out`; keeps the layer's alpha. */
+  private mergeInner(content: WebGLTexture, fx: WebGLTexture, out: Target, mode: number, set: TargetSet): void {
+    const gl = this.gl;
+    this.fxPass(out.fb, set, content, null, (u) => {
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, fx);
+      gl.uniform1i(u.u_op, 4);
+      gl.uniform1i(u.u_mode, mode);
+    });
+  }
+
+  /** Outer effects of a cached layer, blended onto the backdrop before the layer itself. */
+  private compositeOuter(e: CacheEntry, l: Layer, doc: DocState, set: TargetSet, acc: { cur: Target; other: Target }): void {
+    for (const o of e.outer ?? []) this.composite(o.t.tex, l, doc, set, acc, o.blend);
   }
 
   private async runLayerEncoder(id: string, e: CacheEntry, p: EncParams, seed: number, src: WebGLFramebuffer = e.fb): Promise<void> {
@@ -503,6 +670,7 @@ export class GLRenderer {
     const e = this.caches.get(id);
     if (!e) return;
     if (e.side) this.freeTarget(e.side);
+    for (const o of e.outer ?? []) this.freeTarget(o.t);
     this.freeTarget(e);
     this.caches.delete(id);
   }
@@ -512,11 +680,12 @@ export class GLRenderer {
     const ids = new Set(doc.layers.filter((l) => l.fx).map((l) => l.id));
     for (const id of [...this.caches.keys()]) if (!ids.has(id.split('@')[0])) this.dropCache(id);
     for (const id of this.scratch.keys()) if (!ids.has(id)) this.scratch.delete(id);
-    let total = [...this.caches.values()].reduce((a, e) => a + e.w * e.h * 4, 0);
+    const bytes = (e: CacheEntry) => e.w * e.h * 4 * (1 + (e.outer?.length ?? 0) + (e.side ? 1 : 0));
+    let total = [...this.caches.values()].reduce((a, e) => a + bytes(e), 0);
     const lru = [...this.caches.entries()].filter(([id, e]) => e.used < usedNow && !e.encBusy && !(this.finals > 0 && id.endsWith('F'))).sort((a, b) => a[1].used - b[1].used);
     while (total > this.cacheBudget && lru.length) {
       const [id, e] = lru.shift()!;
-      total -= e.w * e.h * 4;
+      total -= bytes(e);
       this.dropCache(id);
     }
     // Source textures not used for a while (e.g. full-res after zooming out, old text rasters).
@@ -539,6 +708,7 @@ export class GLRenderer {
       if (!ref) continue;
       if (job.layerFx && layerHasFx(l)) {
         const { entry } = this.layerCache(l, ref, job, set, false);
+        this.compositeOuter(entry, l, job.doc, set, acc);
         this.composite(entry.tex, l, job.doc, set, acc);
       } else this.drawLayer(l, ref, job, set, acc);
     }
@@ -573,6 +743,7 @@ export class GLRenderer {
       if (job.layerFx && layerHasFx(l)) {
         const { entry, pending } = this.layerCache(l, ref, job, set, true);
         if (pending) await pending;
+        this.compositeOuter(entry, l, job.doc, set, acc);
         this.composite(entry.tex, l, job.doc, set, acc);
         if (stream) this.dropCache(`${l.id}@${job.w}x${job.h}F`);
       } else this.drawLayer(l, ref, job, set, acc);
@@ -627,9 +798,9 @@ export class GLRenderer {
 
   /** GPU memory held by caches and sources (approximate, bytes). */
   get memory(): { caches: number; sources: number; work: number } {
-    const caches = [...this.caches.values()].reduce((a, e) => a + e.w * e.h * 4, 0);
+    const caches = [...this.caches.values()].reduce((a, e) => a + e.w * e.h * 4 * (1 + (e.outer?.length ?? 0) + (e.side ? 1 : 0)), 0);
     const sources = [...this.sources.values()].reduce((a, s) => a + s.bytes, 0);
-    const work = [...this.sets.values()].reduce((a, s) => a + s.w * s.h * 4 * 5, 0);
+    const work = [...this.sets.values()].reduce((a, s) => a + s.w * s.h * 4 * (s.fx ? 10 : 5), 0);
     return { caches, sources, work };
   }
 
@@ -638,6 +809,8 @@ export class GLRenderer {
     ext?.loseContext();
   }
 }
+
+const rgb = (hex: string): [number, number, number] => hexRgb(hex);
 
 function hexRgb(hex: string): [number, number, number] {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);

@@ -362,18 +362,10 @@ void main() {
 }`;
 
 /**
- * Non-normal blend modes (W3C Compositing and Blending Level 1) of a layer already placed
- * in document space (u_src) over the premultiplied backdrop (u_dst), which may be transparent.
+ * Blend modes (W3C Compositing and Blending Level 1), shared by the layer compositor (COMP_FRAG)
+ * and the layer styles (FX_FRAG). blend(mode, backdrop, source) with the index of doc.ts BLENDS.
  */
-export const COMP_FRAG = /* glsl */ `#version 300 es
-precision highp float;
-uniform sampler2D u_src;
-uniform sampler2D u_dst;
-uniform float u_opacity;
-uniform int u_mode;
-in vec2 v_uv;
-out vec4 o;
-
+const BLEND_GLSL = /* glsl */ `
 float lum(vec3 c) { return dot(c, vec3(0.3, 0.59, 0.11)); }
 vec3 clipColor(vec3 c) {
   float l = lum(c);
@@ -418,7 +410,22 @@ vec3 blend(int m, vec3 b, vec3 s) {
   if (m == 15) return setLum(b, lum(s));                      // luminosity
   return s;
 }
+`;
 
+/**
+ * Non-normal blend modes (W3C Compositing and Blending Level 1) of a layer already placed
+ * in document space (u_src) over the premultiplied backdrop (u_dst), which may be transparent.
+ */
+export const COMP_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+uniform sampler2D u_src;
+uniform sampler2D u_dst;
+uniform float u_opacity;
+uniform int u_mode;
+in vec2 v_uv;
+out vec4 o;
+
+${BLEND_GLSL}
 void main() {
   vec4 s = texture(u_src, v_uv);          // layer: straight alpha
   vec4 d = texture(u_dst, v_uv);          // accumulator: premultiplied, maybe transparent
@@ -427,4 +434,113 @@ void main() {
   // W3C compositing: where the backdrop is transparent the layer shows unblended.
   vec3 cs = mix(s.rgb, clamp(blend(u_mode, b, s.rgb), 0.0, 1.0), d.a);
   o = vec4(sa * cs + (1.0 - sa) * d.rgb, sa + d.a * (1.0 - sa));
+}`;
+
+
+/**
+ * Layer styles (layerstyle.ts). One program, one operation per pass, on the targets the renderer
+ * already has (document space, GL orientation, straight alpha):
+ *  op 0  mask: alpha of the layer (u_src) moved by u_offset (uv), optionally inverted → .r
+ *  op 1  grow: max filter of the mask along u_dir over u_radius px (separable: spread / choke)
+ *  op 2  blur: gaussian of the mask along u_dir, radius u_radius px (separable)
+ *  op 3  colour: contour, range, noise, opacity and colour / gradient of the effect; clipped to
+ *        the layer (inner effects) or knocked out under it (drop shadow) → straight RGBA
+ *  op 4  merge: an inner effect (u_fx) over the layer (u_src) with its blend mode; keeps the
+ *        layer's alpha (inner effects never paint outside the shape)
+ * Noise comes from an integer hash of (pixel, seed): deterministic, never Math.random().
+ */
+export const FX_FRAG = /* glsl */ `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D u_src;
+uniform sampler2D u_mask;
+uniform sampler2D u_fx;
+uniform int u_op;
+uniform vec2 u_offset;
+uniform bool u_invert;
+uniform vec2 u_dir;
+uniform float u_radius;
+uniform vec3 u_color;
+uniform vec3 u_color2;
+uniform bool u_gradient;
+uniform float u_opacity;
+uniform float u_noise;
+uniform uint u_seed;
+uniform int u_contour;
+uniform float u_range;
+uniform int u_clip;
+uniform bool u_center;
+uniform int u_mode;
+in vec2 v_uv;
+out vec4 o;
+${BLEND_GLSL}
+const int TAPS = 24;
+const float PI = 3.14159265359;
+
+uint hashu(uint x) {
+  x ^= x >> 16; x *= 0x7feb352du;
+  x ^= x >> 15; x *= 0x846ca68bu;
+  x ^= x >> 16; return x;
+}
+float maskAt(vec2 uv) {
+  // Outside the canvas the layer is empty (0), the inverted mask full (1).
+  bool out_ = uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0;
+  float a = out_ ? 0.0 : texture(u_src, uv).a;
+  return u_invert ? 1.0 - a : a;
+}
+float contour(float t) {
+  if (u_contour == 1) return smoothstep(0.0, 1.0, t);
+  if (u_contour == 2) { float s = sin(PI * t); return s * s; }
+  if (u_contour == 3) return 1.0 - abs(2.0 * t - 1.0);
+  return t;
+}
+
+void main() {
+  vec2 px = 1.0 / vec2(textureSize(u_mask, 0));
+  if (u_op == 0) {
+    o = vec4(maskAt(v_uv - u_offset), 0.0, 0.0, 1.0);
+  } else if (u_op == 1) {
+    float stepPx = max(1.0, u_radius / float(TAPS));
+    float m = 0.0;
+    for (int i = -TAPS; i <= TAPS; i++) {
+      float t = float(i) * stepPx;
+      if (abs(t) > u_radius + 0.5) continue;
+      m = max(m, texture(u_mask, v_uv + u_dir * px * t).r);
+    }
+    o = vec4(m, 0.0, 0.0, 1.0);
+  } else if (u_op == 2) {
+    float sigma = max(u_radius / 2.5, 0.35);
+    float stepPx = max(1.0, (u_radius * 1.2) / float(TAPS));
+    float sum = 0.0;
+    float wsum = 0.0;
+    for (int i = -TAPS; i <= TAPS; i++) {
+      float t = float(i) * stepPx;
+      if (abs(t) > u_radius * 1.2 + 0.5) continue;
+      float w = exp(-0.5 * t * t / (sigma * sigma));
+      sum += texture(u_mask, v_uv + u_dir * px * t).r * w;
+      wsum += w;
+    }
+    o = vec4(sum / max(wsum, 1e-6), 0.0, 0.0, 1.0);
+  } else if (u_op == 3) {
+    float m = clamp(texture(u_mask, v_uv).r, 0.0, 1.0);
+    if (u_center) m = 1.0 - m;
+    // Range: < 50 % concentrates the effect near its edge, > 50 % widens it.
+    float t = pow(m, 50.0 / max(u_range, 1.0));
+    float a = contour(t) * u_opacity;
+    if (u_noise > 0.0) {
+      uvec2 q = uvec2(gl_FragCoord.xy);
+      float r = float(hashu(q.x * 0x9e3779b1u ^ hashu(q.y ^ u_seed)) >> 8) / 16777216.0;
+      a *= 1.0 - u_noise * r;
+    }
+    float ca = texture(u_src, v_uv).a;
+    if (u_clip == 1) a *= ca;
+    else if (u_clip == 2) a *= 1.0 - ca;
+    vec3 c = u_gradient ? mix(u_color2, u_color, t) : u_color;
+    o = vec4(c, clamp(a, 0.0, 1.0));
+  } else {
+    vec4 c = texture(u_src, v_uv);
+    vec4 f = texture(u_fx, v_uv);
+    vec3 rgb = mix(c.rgb, clamp(blend(u_mode, c.rgb, f.rgb), 0.0, 1.0), f.a);
+    o = vec4(rgb, c.a);
+  }
 }`;

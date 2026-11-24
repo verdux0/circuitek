@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { clampParam, driftCycles, jumpHold, paramAt, stateAtFrame } from '../src/motion';
 import { STAGES, defaultMotion, defaultState, parsePresetFile, sanitizeState, toPresetFile } from '../src/model';
+import { defaultStyle } from '../src/layerstyle';
 import { frameSeed } from '../src/media/timing';
 
 describe('stateAtFrame (one function for preview and export)', () => {
@@ -144,8 +145,16 @@ describe('schema v2: motion in the state and in presets', () => {
     const s = defaultState();
     s.motion = { ...defaultMotion(), mode: 'jumps', intensity: 33, speed: 77, seconds: 5, fps: 25 };
     const file = toPresetFile('x', s);
-    expect(file.version).toBe(2);
+    expect(file.version).toBe(3);
     expect(parsePresetFile(JSON.stringify(file)).state.motion).toEqual(s.motion);
+    // Version 2 files (before layer styles) load the same, without a style.
+    const v2 = parsePresetFile(JSON.stringify({ ...file, version: 2 }));
+    expect(v2.state.motion).toEqual(s.motion);
+    expect(v2.style).toBeUndefined();
+    // Version 3 carries the layer style when there is one.
+    const style = defaultStyle();
+    style.dropShadow.on = true;
+    expect(parsePresetFile(JSON.stringify(toPresetFile('x', s, style))).style).toEqual(style);
     const old = JSON.stringify({ app: 'glitch-editor', version: 1, name: 'viejo', state: { v: 1, seed: 3, effect: 20, filter: 20, cables: [], stages: {} } });
     expect(parsePresetFile(old).state.motion).toEqual(defaultMotion());
   });

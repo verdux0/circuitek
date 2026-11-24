@@ -3,6 +3,7 @@
  * the extra signal stages and the serializable editor state.
  */
 import { mixSeed } from './prng';
+import { cloneStyle, sanitizeStyle, type LayerStyle } from './layerstyle';
 
 export const PINS = ['SUB', 'RG', 'OD', 'TG', 'AB', 'HCLK'] as const;
 export type Pin = (typeof PINS)[number];
@@ -310,21 +311,26 @@ export const motionFrames = (m: Motion): number => Math.max(2, Math.round(m.seco
 
 export interface PresetFile {
   app: 'circuitek';
-  /** 2: the state carries `motion`. Version 1 files still load (default motion). */
-  version: 2;
+  /** 2: the state carries `motion`; 3: optional layer `style`. Versions 1 and 2 still load. */
+  version: 3;
   name: string;
   state: GlitchState;
+  /** Layer style (shadows, glows) saved with the preset (absent = the preset leaves the style alone). */
+  style?: LayerStyle;
 }
 
-export function toPresetFile(name: string, s: GlitchState): PresetFile {
-  return { app: 'circuitek', version: 2, name, state: cloneState(s) };
+export function toPresetFile(name: string, s: GlitchState, style?: LayerStyle): PresetFile {
+  const f: PresetFile = { app: 'circuitek', version: 3, name, state: cloneState(s) };
+  if (style) f.style = cloneStyle(style);
+  return f;
 }
 
-export function parsePresetFile(text: string): { name: string; state: GlitchState } {
+export function parsePresetFile(text: string): { name: string; state: GlitchState; style?: LayerStyle } {
   const raw = JSON.parse(text) as Record<string, unknown>;
   const state = sanitizeState('state' in raw ? raw.state : raw);
   const name = typeof raw.name === 'string' ? raw.name : 'Preset';
-  return { name, state };
+  const style = sanitizeStyle(raw.style);
+  return style ? { name, state, style } : { name, state };
 }
 
 /* ---------- Render plan (pure, shared by GPU renderer and tests) ---------- */

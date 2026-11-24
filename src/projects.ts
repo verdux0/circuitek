@@ -23,10 +23,10 @@ export interface ProjectMeta {
   thumb: string;
   layers: number;
 }
-/** Project schema: 2 = text layers may carry fontId / weight (font library); 1 opens as is. */
-export const PROJECT_VERSION = 2;
+/** Project schema: 2 = fontId / weight on text layers; 3 = layer styles, crop, global light. Older ones open as is. */
+export const PROJECT_VERSION = 3;
 export interface ProjectRecord extends ProjectMeta {
-  v: 1 | 2;
+  v: 1 | 2 | 3;
   doc: DocState;
   /** Families of font files the text layers use (bytes under font:<family>). */
   fonts: string[];

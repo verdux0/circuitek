@@ -7,6 +7,7 @@ import type { TextProps } from './text';
 import { sanitizeState, type GlitchState } from './model';
 import { DEFAULT_TEXT } from './text';
 import { flipCrop, resizeCrop, rotateCrop, sanitizeCrop, type CropRect } from './crop';
+import { cloneStyle, sanitizeLight, sanitizeStyle, type GlobalLight, type LayerStyle } from './layerstyle';
 
 export const BLENDS = [
   ['source-over', 'Normal'],
@@ -59,6 +60,8 @@ export interface Layer {
   fx?: GlitchState;
   /** Animated source (video / GIF): `src` keys a poster bitmap plus the media player. */
   media?: LayerMedia;
+  /** Layer style (drop shadow, glows…): drawn from the layer's alpha, never baked into it. */
+  style?: LayerStyle;
 }
 
 /**
@@ -81,6 +84,8 @@ export interface DocState {
   active: string | null;
   /** Non-destructive crop (normalised view window, see crop.ts). Absent = the whole canvas. */
   crop?: CropRect;
+  /** «Luz global» of the layer styles (layerstyle.ts). Absent = 120°. */
+  light?: GlobalLight;
 }
 
 export type Mat = [number, number, number, number, number, number];
@@ -92,6 +97,7 @@ export function emptyDoc(): DocState {
 export function cloneDoc(d: DocState): DocState {
   const c: DocState = { ...d, layers: d.layers.map(cloneLayer) };
   if (d.crop) c.crop = { ...d.crop };
+  if (d.light) c.light = { ...d.light };
   return c;
 }
 
@@ -100,6 +106,7 @@ export function cloneLayer(l: Layer): Layer {
   if (l.text) c.text = { ...l.text };
   if (l.fx) c.fx = JSON.parse(JSON.stringify(l.fx)) as GlitchState;
   if (l.media) c.media = { ...l.media };
+  if (l.style) c.style = cloneStyle(l.style);
   return c;
 }
 
@@ -383,6 +390,8 @@ export function sanitizeDoc(input: unknown): DocState {
   if (o.transparent === true) d.transparent = true;
   const crop = sanitizeCrop(o.crop);
   if (crop) d.crop = crop;
+  const light = sanitizeLight(o.light);
+  if (light) d.light = light;
   for (const raw of Array.isArray(o.layers) ? o.layers : []) {
     if (!raw || typeof raw !== 'object') continue;
     const r = raw as Record<string, unknown>;
@@ -406,6 +415,8 @@ export function sanitizeDoc(input: unknown): DocState {
       fx: sanitizeState(r.fx),
     };
     if (r.autoName !== undefined) l.autoName = r.autoName !== false;
+    const style = sanitizeStyle(r.style);
+    if (style) l.style = style;
     if (r.media && typeof r.media === 'object') {
       const m = r.media as Record<string, unknown>;
       if (m.kind === 'video' || m.kind === 'gif') l.media = { kind: m.kind };
