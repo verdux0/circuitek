@@ -12,7 +12,7 @@ import { CABLE_COLORS, RewirePanel } from './ui/rewire';
 import { StagesPanel } from './ui/stages';
 import { makeSampleImage } from './sample';
 import { SESSION_VERSION, Session } from './session';
-import { clampSize, cloneDoc, cloneLayer, emptyDoc, fxTargetId, sanitizeDoc, flipLayer, getLayer, makeLayer, newId, pasteLayer, rotateLayer, textLayerName, type BitmapSource, type DocState, type Layer } from './doc';
+import { clampSize, cloneDoc, cloneLayer, emptyDoc, fxTargetId, sanitizeDoc, flipLayer, getLayer, makeLayer, newId, pasteLayer, resizeDoc, rotateLayer, textLayerName, type BitmapSource, type DocState, type Layer } from './doc';
 import { PROJECT_VERSION, ProjectStore, parseProjectFile, type ProjectMeta, type ProjectRecord } from './projects';
 import { ContextMenu, type MenuEntry } from './ui/contextmenu';
 import { ico } from './ui/icons';
@@ -38,6 +38,8 @@ import { MOTION_FPS, MOTION_SECONDS, motionFrames, type MotionMode } from './mod
 import { sanitizeSettings } from './export/settings';
 import { GifPlayer, VideoPlayer, mediaKind, type MediaPlayer } from './media/player';
 import { SPEEDS, formatTime, spokenTime } from './media/timing';
+import { CropTool } from './ui/croptool';
+import { toCrop } from './crop';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 /** Menus, options bar, canvas and dock columns (panels by id: see ui/shell.ts). */
@@ -340,10 +342,42 @@ const viewport: Viewport = new Viewport($('stage'), {
 });
 engine.onPresent = () => viewport.present();
 
+/* ---- crop tool (non-destructive view window; see crop.ts) ---- */
+let cropTool: CropTool | null = null;
+cropTool = new CropTool($('viewer'), $('stage'), viewport, {
+  doc: () => doc,
+  apply: (r, discard) => {
+    if (discard) {
+      // Destructive on request: the canvas becomes the rectangle (the glitch pattern is recomputed).
+      editDoc((d) => {
+        resizeDoc(d, r.w, r.h, -r.x, -r.y);
+        delete d.crop;
+      }, 'once');
+      toast(`Lienzo recortado a ${r.w}×${r.h} (Ctrl+Z lo deshace)`);
+    } else {
+      const before = doc.crop;
+      editDoc((d) => {
+        const c = toCrop(d.w, d.h, r);
+        if (c) d.crop = c;
+        else delete d.crop;
+      }, 'once');
+      toast(doc.crop ? `Recorte ${r.w}×${r.h} · el original no se toca (C para reajustarlo)` : before ? 'Recorte quitado: se ve todo el lienzo' : 'Sin recorte');
+    }
+    viewport.fit();
+  },
+  closed: () => requestRender(),
+});
+function openCrop(): void {
+  if (!doc.layers.length) return toast('Importa una imagen primero');
+  textEditor.close();
+  cropTool?.open();
+}
+
 const zoomPct = $('zoom-pct');
 let previewTimer = 0;
 function viewChanged(): void {
   textEditor?.position();
+  cropTool?.position();
   zoomPct.textContent = `${Math.round(viewport.zoom * 100)}%`;
   clearTimeout(previewTimer);
   previewTimer = window.setTimeout(() => {
@@ -674,6 +708,7 @@ function afterChange(full: boolean, docTouched = false): void {
     fontList?.markCurrent();
     textEditor?.position();
     syncProjectLabel();
+    cropTool?.sync();
   }
   requestRender();
   stages.syncLeds();
@@ -1742,6 +1777,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'v') void showVariants();
   else if (k === 'i') pickFile();
   else if (k === 'g') gifSearch.open();
+  else if (k === 'c') openCrop();
   else if (k === 't' && !e.repeat) {
     e.preventDefault();
     void addTextLayer();
@@ -1935,7 +1971,8 @@ const MENUS: MenuDef[] = [
           { label: 'Voltear vertical', action: () => layersPanel.docAction('flip-v') },
         ],
       },
-      { label: 'Recortar', action: () => layersPanel.docAction('crop-active'), disabled: noDoc() ?? (doc.active ? null : 'Selecciona una capa: el lienzo se recorta a ella') },
+      { label: 'Recortar…', keys: 'C', action: openCrop, disabled: noDoc() },
+      { label: 'Recortar a la capa', action: () => layersPanel.docAction('crop-active'), disabled: noDoc() ?? (doc.active ? null : 'Selecciona una capa: el lienzo se recorta a ella') },
       { label: 'Mostrar todo', action: () => layersPanel.docAction('crop-all'), disabled: noDoc() },
     ],
   },
@@ -2265,6 +2302,14 @@ Object.assign(window, {
     },
     session: () => session,
     gpuMemory: () => engine.memory,
+    /** Full-resolution PNG export (what Exportar PNG writes: crop and effects included), as base64. */
+    exportPng: async (scale = 1) => {
+      const r = await engine.exportFull(doc, null, 'image/png', () => {}, { scale });
+      const bytes = new Uint8Array(await r.blob.arrayBuffer());
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return btoa(bin);
+    },
     exportSize: async (type: 'image/png' | 'image/jpeg' = 'image/png') => {
       const r = await engine.exportFull(doc, null, type);
       return { w: r.w, h: r.h, bytes: r.blob.size, original: [doc.w, doc.h] };

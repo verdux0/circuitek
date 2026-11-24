@@ -3,6 +3,7 @@
  * The main part exports at once with the saved defaults; ▾ lists every format (the ones that do
  * not apply stay visible, disabled, with the reason) and opens the options dialog.
  */
+import { viewSize } from '../crop';
 import type { DocState } from '../doc';
 import type { Motion } from '../model';
 import type { ContextMenu } from './contextmenu';
@@ -130,7 +131,8 @@ export class ExportUI {
       return [p.w, p.h];
     }
     const k = s.format === 'jpg' ? s.jpg.scale : s.png.scale;
-    return [Math.round(doc.w * k), Math.round(doc.h * k)];
+    const [vw, vh] = viewSize(doc.w, doc.h, doc.crop);
+    return [Math.round(vw * k), Math.round(vh * k)];
   }
 
   /** Folder sink when chosen and allowed, else a download. Must start inside a click (permission prompt). */

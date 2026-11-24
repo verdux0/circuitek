@@ -13,6 +13,7 @@
  */
 import Konva from 'konva';
 import { fromLinear, type BitmapSource, type DocState, type Layer } from '../doc';
+import { cropPx } from '../crop';
 
 export interface ViewportHost {
   doc(): DocState;
@@ -55,6 +56,8 @@ export class Viewport {
   private panning: { id: number; x: number; y: number } | null = null;
   private touches = new Map<number, { x: number; y: number }>();
   private pinch: { dist: number; cx: number; cy: number } | null = null;
+  /** The crop tool is open: show the whole canvas (no clipping) and hide the transformer. */
+  private cropEditing = false;
 
   constructor(
     private container: HTMLElement,
@@ -150,15 +153,52 @@ export class Viewport {
     else this.present();
   }
 
+  /** Fits what the document shows (its crop, or the whole canvas while cropping / without a crop). */
   fit(): void {
     const d = this.host.doc();
-    const pad = 24;
-    const k = Math.min((this.stage.width() - pad * 2) / d.w, (this.stage.height() - pad * 2) / d.h);
+    const r = this.cropEditing ? { x: 0, y: 0, w: d.w, h: d.h } : cropPx(d.w, d.h, d.crop);
+    const pad = this.cropEditing ? 48 : 24;
+    const k = Math.min((this.stage.width() - pad * 2) / r.w, (this.stage.height() - pad * 2) / r.h);
     const z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, k));
     this.stage.scale({ x: z, y: z });
-    this.stage.position({ x: (this.stage.width() - d.w * z) / 2, y: (this.stage.height() - d.h * z) / 2 });
+    this.stage.position({ x: (this.stage.width() - r.w * z) / 2 - r.x * z, y: (this.stage.height() - r.h * z) / 2 - r.y * z });
     this.fitted = true;
     this.changed();
+  }
+
+  /** Document px → stage (container) px. */
+  toScreen(x: number, y: number): { x: number; y: number } {
+    const z = this.zoom;
+    const p = this.stage.position();
+    return { x: p.x + x * z, y: p.y + y * z };
+  }
+
+  /** Container px → document px. */
+  toDoc(x: number, y: number): { x: number; y: number } {
+    const z = this.zoom || 1;
+    const p = this.stage.position();
+    return { x: (x - p.x) / z, y: (y - p.y) / z };
+  }
+
+  /** Crop tool open / closed: the view shows the whole canvas and the transformer hides while it is open. */
+  setCropEditing(on: boolean): void {
+    if (this.cropEditing === on) return;
+    this.cropEditing = on;
+    this.uiLayer.visible(!on);
+    this.applyCrop();
+    this.fit();
+  }
+
+  /** Clips the glitched image (and its border / checkerboard) to the crop, unless the crop tool is open. */
+  private applyCrop(): void {
+    const d = this.host.doc();
+    const r = cropPx(d.w, d.h, this.cropEditing ? undefined : d.crop);
+    const cropped = !this.cropEditing && !!d.crop;
+    // Konva clips whenever clipWidth / clipHeight are numbers (0 included): "no clip" = undefined.
+    if (cropped) this.viewLayer.clip({ x: r.x, y: r.y, width: r.w, height: r.h });
+    else this.viewLayer.setAttrs({ clipX: undefined, clipY: undefined, clipWidth: undefined, clipHeight: undefined });
+    this.border.position({ x: r.x, y: r.y });
+    this.border.size({ width: r.w, height: r.h });
   }
 
   /** Zoom to `z` (1 = 100 %, one document pixel per CSS pixel) keeping point p fixed. */
@@ -311,14 +351,18 @@ export class Viewport {
 
   /* ------------------------------ layers ------------------------------ */
 
+  private lastCrop = '';
+
   /** Reconciles the Konva nodes with the document. */
   sync(): void {
     const d = this.host.doc();
     // Canvas resized / rotated: keep it framed if the user had not zoomed by hand.
-    const sizeChanged = d.w !== this.resultNode.width() || d.h !== this.resultNode.height();
+    const cropKey = d.crop ? `${d.crop.x},${d.crop.y},${d.crop.w},${d.crop.h}` : '';
+    const sizeChanged = d.w !== this.resultNode.width() || d.h !== this.resultNode.height() || cropKey !== this.lastCrop;
+    this.lastCrop = cropKey;
     if (sizeChanged && this.fitted && d.layers.length) queueMicrotask(() => this.fit());
     this.resultNode.size({ width: d.w, height: d.h });
-    this.border.size({ width: d.w, height: d.h });
+    this.applyCrop();
     this.checker.size({ width: d.w, height: d.h });
     this.checker.visible(!!d.transparent);
     const seen = new Set<string>();

@@ -15,6 +15,7 @@ import {
   type ExportSettings, type LoopMode,
 } from './settings';
 import type { SaveSink } from './save';
+import { viewSize } from '../crop';
 import GifWorker from './gif.worker?worker&inline';
 import type { GifRequest, GifResponse } from './gif.worker';
 
@@ -238,7 +239,8 @@ export interface GifPlan {
 
 /** What a GIF export will produce (shown in the dialog before rendering). */
 export function planGif(doc: DocState, info: DocInfo, s: ExportSettings): GifPlan {
-  const [w, h] = gifSize(doc.w, doc.h, s.gif.maxWidth);
+  // Size of what the document shows: its crop, or the whole canvas.
+  const [w, h] = gifSize(...viewSize(doc.w, doc.h, doc.crop), s.gif.maxWidth);
   const fps = s.gif.fps;
   if (!info.media) {
     const frames = Math.max(2, Math.round(s.gif.duration * fps));
@@ -447,7 +449,7 @@ export interface VideoPlan {
 }
 
 export function planVideo(doc: DocState, info: DocInfo, s: ExportSettings): VideoPlan {
-  const [w, h] = mp4Size(doc.w, doc.h, s.mp4.height);
+  const [w, h] = mp4Size(...viewSize(doc.w, doc.h, doc.crop), s.mp4.height);
   const fps = s.mp4.fps;
   let start = 0;
   let end = s.mp4.duration;

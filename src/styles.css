@@ -728,3 +728,53 @@ details.sub[open] { display: flex; flex-direction: column; gap: var(--sp-4); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ======================= crop tool (src/ui/croptool.ts) ======================= */
+.crop-ui { position: absolute; inset: 0; z-index: var(--z-hud); overflow: hidden; touch-action: none; cursor: crosshair; }
+.crop-ui[hidden] { display: none; }
+/* The rectangle: the "shield" outside it is a huge shadow; thirds are two pairs of lines. */
+.crop-box {
+  position: absolute; box-sizing: border-box; cursor: move; outline: none;
+  border: var(--border) solid #fff; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.6);
+}
+.crop-box:focus-visible { border-color: var(--c-accent); }
+.crop-box.thirds {
+  background:
+    linear-gradient(to right, transparent calc(100% / 3 - 0.5px), rgba(255, 255, 255, 0.55) calc(100% / 3 - 0.5px) calc(100% / 3 + 0.5px), transparent calc(100% / 3 + 0.5px) calc(200% / 3 - 0.5px), rgba(255, 255, 255, 0.55) calc(200% / 3 - 0.5px) calc(200% / 3 + 0.5px), transparent calc(200% / 3 + 0.5px)),
+    linear-gradient(to bottom, transparent calc(100% / 3 - 0.5px), rgba(255, 255, 255, 0.55) calc(100% / 3 - 0.5px) calc(100% / 3 + 0.5px), transparent calc(100% / 3 + 0.5px) calc(200% / 3 - 0.5px), rgba(255, 255, 255, 0.55) calc(200% / 3 - 0.5px) calc(200% / 3 + 0.5px), transparent calc(200% / 3 + 0.5px));
+}
+/* Handles: a 44 px grab area around a 12 px visible square. */
+.crop-h { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; touch-action: none; }
+.crop-h::after { content: ''; position: absolute; left: 16px; top: 16px; width: 12px; height: 12px; background: #fff; border: var(--border) solid var(--c-accent); box-sizing: border-box; }
+.crop-h-nw { left: 0; top: 0; cursor: nwse-resize; }
+.crop-h-n { left: 50%; top: 0; cursor: ns-resize; }
+.crop-h-ne { left: 100%; top: 0; cursor: nesw-resize; }
+.crop-h-e { left: 100%; top: 50%; cursor: ew-resize; }
+.crop-h-se { left: 100%; top: 100%; cursor: nwse-resize; }
+.crop-h-s { left: 50%; top: 100%; cursor: ns-resize; }
+.crop-h-sw { left: 0; top: 100%; cursor: nesw-resize; }
+.crop-h-w { left: 0; top: 50%; cursor: ew-resize; }
+/* Options bar, over the top of the viewer. */
+.crop-bar {
+  position: absolute; left: var(--sp-4); right: var(--sp-4); top: var(--sp-4); z-index: calc(var(--z-hud) + 1);
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); padding: var(--sp-3) var(--sp-4);
+  background: var(--c-raised); color: var(--c-text); border-radius: var(--radius); box-shadow: var(--shadow-float); font-size: var(--fs-m);
+}
+.crop-bar[hidden] { display: none; }
+.crop-f { display: inline-flex; align-items: center; gap: var(--sp-3); }
+.crop-f span { color: var(--c-text-dim); }
+.crop-bar input[type='number'] { width: calc(var(--sp-7) * 2.4); }
+.crop-custom { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.crop-custom[hidden] { display: none; }
+.crop-custom input[type='number'] { width: calc(var(--sp-7) * 1.8); }
+.crop-size { color: var(--c-text-dim); font-variant-numeric: tabular-nums; }
+.crop-chk { display: inline-flex; align-items: center; gap: var(--sp-3); }
+.crop-end { margin-left: auto; display: inline-flex; gap: var(--sp-3); }
+.crop-thirds[aria-pressed='true'] { background: var(--c-tool-active); }
+body.cropping .view-hud { z-index: calc(var(--z-hud) + 2); }
+@media (max-width: 768px) {
+  .crop-bar { gap: var(--sp-3); }
+  .crop-bar .hw-btn, .crop-bar select, .crop-bar input { min-height: var(--h-touch); }
+  .crop-bar .hw-btn.icon { min-width: var(--h-touch); }
+  .crop-size { display: none; }
+}

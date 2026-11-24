@@ -9,6 +9,7 @@ import { GLRenderer, type RenderJob, type SourceProvider } from './gl/renderer';
 import { EncoderClient } from './encoder/client';
 import { encParams, encSeed, type GlitchState } from './model';
 import type { DocState } from './doc';
+import { extractRect, viewSize } from './crop';
 
 export const PREVIEW_MAX = 1280;
 /** Upper bound for the adaptive preview resolution when zoomed in. */
@@ -113,14 +114,45 @@ export class Engine {
     return new GLRenderer(provider, (img, p, seed) => this.enc.run(img, p, seed));
   }
 
-  /** Every stage (encoders awaited) at w × h with renderer `r`: one exported frame. */
+  /**
+   * What the document shows (its crop, or the whole canvas) at exactly outW × outH: the canvas is
+   * rendered WHOLE at the matching scale (so the glitch pattern is the one of the uncropped image)
+   * and the crop is cut out of it. Without a crop it is just the full render.
+   */
+  private async renderView(r: GLRenderer, doc: DocState, global: GlitchState | null, outW: number, outH: number, stream = false): Promise<ImageData> {
+    const c = doc.crop;
+    if (!c) return this.finish(r, { doc, global, layerFx: true, w: outW, h: outH }, stream);
+    let fw = Math.max(outW, Math.round(outW / c.w));
+    let fh = Math.max(outH, Math.round(outH / c.h));
+    // Very small crops exported large could ask for more than the GPU allows: render the most it
+    // can and scale the cut-out up to the requested size (rare; the size stays exact).
+    const k = Math.min(1, this.maxSize / Math.max(fw, fh));
+    fw = Math.max(1, Math.round(fw * k));
+    fh = Math.max(1, Math.round(fh * k));
+    const full = await this.finish(r, { doc, global, layerFx: true, w: fw, h: fh }, stream);
+    const cw = Math.max(1, Math.min(fw, Math.round(outW * k)));
+    const ch = Math.max(1, Math.min(fh, Math.round(outH * k)));
+    const rx = Math.max(0, Math.min(fw - cw, Math.round(c.x * fw)));
+    const ry = Math.max(0, Math.min(fh - ch, Math.round(c.y * fh)));
+    const cut = new ImageData(extractRect(full.data, fw, { x: rx, y: ry, w: cw, h: ch }), cw, ch);
+    if (cw === outW && ch === outH) return cut;
+    const src = new OffscreenCanvas(cw, ch);
+    src.getContext('2d')!.putImageData(cut, 0, 0);
+    const dst = new OffscreenCanvas(outW, outH);
+    const g = dst.getContext('2d')!;
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(src, 0, 0, outW, outH);
+    return g.getImageData(0, 0, outW, outH);
+  }
+
+  /** Every stage (encoders awaited) at w × h (the crop's size) with renderer `r`: one exported frame. */
   renderWith(r: GLRenderer, doc: DocState, w: number, h: number): Promise<ImageData> {
-    return this.finish(r, { doc, global: null, layerFx: true, w, h });
+    return this.renderView(r, doc, null, w, h);
   }
 
   async renderThumb(doc: DocState, global: GlitchState | null): Promise<ImageData> {
-    const [w, h] = fitSize(doc.w, doc.h, THUMB_MAX);
-    return this.finish(this.gl, { doc, global, layerFx: true, w, h });
+    const [w, h] = fitSize(...viewSize(doc.w, doc.h, doc.crop), THUMB_MAX);
+    return this.renderView(this.gl, doc, global, w, h);
   }
 
   /** Full pipeline at preview size, returned as pixels (used by tests). */
@@ -135,11 +167,13 @@ export class Engine {
     opts: { scale?: number; quality?: number; provider?: SourceProvider } = {},
   ): Promise<{ blob: Blob; w: number; h: number }> {
     const k = opts.scale ?? 1;
-    const [w, h] = fitSize(Math.max(1, Math.round(doc.w * k)), Math.max(1, Math.round(doc.h * k)), this.maxSize);
+    // The crop's size (or the canvas'), scaled.
+    const [vw, vh] = viewSize(doc.w, doc.h, doc.crop);
+    const [w, h] = fitSize(Math.max(1, Math.round(vw * k)), Math.max(1, Math.round(vh * k)), this.maxSize);
     onStep(`GPU ${w}×${h} · ${doc.layers.length} capa${doc.layers.length === 1 ? '' : 's'}`);
     const r = new GLRenderer(opts.provider ?? this.provider, (img, p, seed) => this.enc.run(img, p, seed));
     try {
-      const img = await this.finish(r, { doc, global, layerFx: true, w, h }, true);
+      const img = await this.renderView(r, doc, global, w, h, true);
       onStep('Codificando');
       const cv = new OffscreenCanvas(w, h);
       cv.getContext('2d')!.putImageData(img, 0, 0);

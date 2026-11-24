@@ -6,6 +6,7 @@
 import type { TextProps } from './text';
 import { sanitizeState, type GlitchState } from './model';
 import { DEFAULT_TEXT } from './text';
+import { flipCrop, resizeCrop, rotateCrop, sanitizeCrop, type CropRect } from './crop';
 
 export const BLENDS = [
   ['source-over', 'Normal'],
@@ -78,6 +79,8 @@ export interface DocState {
   /** Bottom → top. */
   layers: Layer[];
   active: string | null;
+  /** Non-destructive crop (normalised view window, see crop.ts). Absent = the whole canvas. */
+  crop?: CropRect;
 }
 
 export type Mat = [number, number, number, number, number, number];
@@ -87,7 +90,9 @@ export function emptyDoc(): DocState {
 }
 
 export function cloneDoc(d: DocState): DocState {
-  return { ...d, layers: d.layers.map(cloneLayer) };
+  const c: DocState = { ...d, layers: d.layers.map(cloneLayer) };
+  if (d.crop) c.crop = { ...d.crop };
+  return c;
 }
 
 export function cloneLayer(l: Layer): Layer {
@@ -269,6 +274,12 @@ export function rotateDoc(d: DocState, dir: 1 | -1): void {
   }
   d.w = h;
   d.h = w;
+  setCrop(d, rotateCrop(d.crop, dir));
+}
+
+function setCrop(d: DocState, c: CropRect | undefined): void {
+  if (c) d.crop = c;
+  else delete d.crop;
 }
 
 /** Name shown for a text layer: its first line. */
@@ -284,6 +295,7 @@ export function flipDoc(d: DocState, axis: 'h' | 'v'): void {
     else l.y = d.h - l.y;
     flipLayer(l, axis);
   }
+  setCrop(d, flipCrop(d.crop, axis));
 }
 
 /** Crops / extends the canvas to the bounding box of a layer (or of all visible layers). */
@@ -305,8 +317,11 @@ export function resizeDoc(d: DocState, w: number, h: number, dx?: number, dy?: n
     l.x += ox;
     l.y += oy;
   }
+  const [ow, oh] = [d.w, d.h];
   d.w = Math.max(1, Math.round(w));
   d.h = Math.max(1, Math.round(h));
+  // The crop stays on the same pixels of the content.
+  setCrop(d, resizeCrop(d.crop, ow, oh, d.w, d.h, ox, oy));
 }
 
 /**
@@ -366,6 +381,8 @@ export function sanitizeDoc(input: unknown): DocState {
     active: null,
   };
   if (o.transparent === true) d.transparent = true;
+  const crop = sanitizeCrop(o.crop);
+  if (crop) d.crop = crop;
   for (const raw of Array.isArray(o.layers) ? o.layers : []) {
     if (!raw || typeof raw !== 'object') continue;
     const r = raw as Record<string, unknown>;
