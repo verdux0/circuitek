@@ -39,6 +39,8 @@ import { sanitizeSettings } from './export/settings';
 import { GifPlayer, VideoPlayer, mediaKind, type MediaPlayer } from './media/player';
 import { SPEEDS, formatTime, spokenTime } from './media/timing';
 import { CropTool } from './ui/croptool';
+import { StyleDialog } from './ui/styledialog';
+import { addedEffects, cloneStyle, defaultStyle, type EffectKey, type LayerStyle as FxStyle } from './layerstyle';
 import { toCrop } from './crop';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -424,6 +426,7 @@ const layersPanel = new LayersPanel({
   fontVariants: (t) => fontVariants(t),
   fontNote: (t) => fontNote(t),
   rowMenu: (id, x, y) => openRowMenu(id, x, y),
+  openStyle: (id, focus) => openStyleDialog(id, focus),
 });
 $('layers').append(layersPanel.el);
 $('layer-props').append(layersPanel.propsEl);
@@ -1345,7 +1348,8 @@ async function exportImage(type: 'image/png' | 'image/jpeg', d: DocState = doc):
 /* ------------------------------ presets file ------------------------------ */
 $('btn-preset-save').addEventListener('click', () => {
   const name = `glitch-${cur().seed}`;
-  const blob = new Blob([JSON.stringify(toPresetFile(name, cur()), null, 2)], { type: 'application/json' });
+  const style = fxLayer()?.style;
+  const blob = new Blob([JSON.stringify(toPresetFile(name, cur(), style && addedEffects(style).length ? style : undefined), null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `${name}.json`;
@@ -1359,8 +1363,16 @@ presetFile.addEventListener('change', async () => {
   presetFile.value = '';
   if (!f) return;
   try {
-    const { name, state: s } = parsePresetFile(await f.text());
-    applyToTarget(s);
+    const { name, state: s, style } = parsePresetFile(await f.text());
+    const l = fxLayer();
+    if (!l) return toast('Importa una imagen primero');
+    // Effects and (when the file has one) layer style: one undo step.
+    editDoc((d) => {
+      const x = getLayer(d, l.id);
+      if (!x) return;
+      x.fx = sanitizeState(s);
+      if (style) x.style = cloneStyle(style);
+    }, 'once');
     toast(`Preset cargado: ${name}`);
   } catch {
     toast('Ese archivo no es un preset válido');
@@ -1848,17 +1860,19 @@ afterChange(true, true);
  * "Style" of a layer = its look, not its content: effects (cables, knobs, stages, seed),
  * opacity and blend mode. Copied from one layer and pasted onto others (undoable).
  */
-interface LayerStyle {
+interface LayerLook {
   fx: GlitchState;
   opacity: number;
   blend: Layer['blend'];
+  /** Layer style (shadows, glows); undefined = the layer had none. */
+  style?: FxStyle;
   from: string;
 }
-let styleClip: LayerStyle | null = null;
+let styleClip: LayerLook | null = null;
 function copyStyle(id: string): void {
   const l = getLayer(doc, id);
   if (!l) return;
-  styleClip = { fx: cloneState(l.fx ?? cleanFx()), opacity: l.opacity, blend: l.blend, from: l.name };
+  styleClip = { fx: cloneState(l.fx ?? cleanFx()), opacity: l.opacity, blend: l.blend, style: l.style ? cloneStyle(l.style) : undefined, from: l.name };
   toast(`Estilo de «${l.name}» copiado`);
 }
 function pasteStyle(id: string): void {
@@ -1872,11 +1886,72 @@ function pasteStyle(id: string): void {
     x.fx = cloneState(st.fx);
     x.opacity = st.opacity;
     x.blend = st.blend;
+    if (st.style) x.style = cloneStyle(st.style);
+    else delete x.style;
   }, 'once');
   toast(`Estilo de «${st.from}» pegado en «${l.name}»`);
 }
+/* ---- «Estilo de capa» (layer styles: shadows and glows) ---- */
+const styleDialog = new StyleDialog({
+  doc: () => doc,
+  edit: (id, fn) =>
+    editDoc((d) => {
+      const l = getLayer(d, id);
+      if (!l) return;
+      l.style ??= defaultStyle();
+      fn(l.style, d);
+    }, 'live'),
+  finish: (id, commit, before) => {
+    if (!commit) {
+      // Cancel: back to the style and light the dialog started with (then no undo step is left).
+      editDoc((d) => {
+        const l = getLayer(d, id);
+        if (l) {
+          if (before.style) l.style = cloneStyle(before.style);
+          else delete l.style;
+        }
+        if (before.light) d.light = { ...before.light };
+        else delete d.light;
+      }, 'live');
+    }
+    editDoc(() => {}, 'end');
+  },
+});
+function openStyleDialog(id: string, focus?: EffectKey): void {
+  const l = getLayer(doc, id);
+  if (!l) return;
+  if (l.locked) return toast('Capa bloqueada');
+  textEditor.close();
+  select(id);
+  styleDialog.open(id, focus);
+}
+function clearLayerStyle(id: string): void {
+  editDoc((d) => {
+    const l = getLayer(d, id);
+    if (l) delete l.style;
+  }, 'once');
+  toast('Estilo de capa borrado');
+}
+/** Hide all effects / show all effects of the document (one undo step). */
+function toggleAllEffects(): void {
+  const styled = doc.layers.filter((l) => addedEffects(l.style).length);
+  if (!styled.length) return toast('Ninguna capa tiene efectos');
+  const show = styled.every((l) => !l.style!.enabled);
+  editDoc((d) => {
+    for (const l of d.layers) if (l.style) l.style.enabled = show;
+  }, 'once');
+  toast(show ? 'Efectos de capa visibles' : 'Efectos de capa ocultos');
+}
+const anyEffectsShown = (): boolean => doc.layers.some((l) => l.style?.enabled && addedEffects(l.style).length > 0);
+
 function styleItems(id: string): MenuEntry[] {
+  const l = getLayer(doc, id);
+  const has = !!l && addedEffects(l.style).length > 0;
   return [
+    { label: 'Estilo de capa…', icon: 'style', action: () => openStyleDialog(id) },
+    { label: 'Borrar estilo de capa', icon: 'eraser', disabled: !has, action: () => clearLayerStyle(id) },
+    { label: anyEffectsShown() ? 'Ocultar todos los efectos' : 'Mostrar todos los efectos', icon: 'eye-off', disabled: !doc.layers.some((x) => addedEffects(x.style).length), action: toggleAllEffects },
+    'sep',
     { label: 'Copiar estilo', icon: 'brush', keys: 'Ctrl+Alt+C', action: () => copyStyle(id) },
     { label: styleClip ? `Pegar estilo de «${styleClip.from.slice(0, 18)}»` : 'Pegar estilo', icon: 'paste', keys: 'Ctrl+Alt+V', disabled: !styleClip, action: () => pasteStyle(id) },
   ];
@@ -2200,7 +2275,7 @@ Object.assign(window, {
       play: () => anim.play(),
       stop: () => anim.stop(),
       show: (i: number) => anim.show(i),
-      state: () => ({ current: anim.current, playing: anim.playing, painted: anim.painted, dropped: anim.dropped, fps: anim.fps, loopFrames: anim.loopFrames, enc: { ...engine.gl.encStats } }),
+      state: () => ({ current: anim.current, playing: anim.playing, painted: anim.painted, dropped: anim.dropped, fps: anim.fps, loopFrames: anim.loopFrames, enc: { ...engine.gl.encStats }, fx: { ...engine.gl.fxStats } }),
     },
     historySize: () => history.size,
     /** Hash of the editor's screen canvas: exactly what the user sees. */

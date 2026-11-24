@@ -389,7 +389,7 @@ input[type='color'] { height: var(--h-ctl); padding: 0; border: 0; border-radius
 .layers-act.danger { color: var(--c-danger); }
 .layers-act .ico, .layers-act .ico-add .ico { width: var(--icon); height: var(--icon); }
 .layer-row {
-  display: grid; grid-template-columns: var(--h-ctl) var(--thumb-w) minmax(0, 1fr) var(--h-ctl) var(--h-ctl) var(--icon); gap: var(--sp-2); align-items: center;
+  display: grid; grid-template-columns: var(--h-ctl) var(--thumb-w) minmax(0, 1fr) var(--h-ctl) var(--h-ctl) var(--h-ctl) var(--icon); gap: var(--sp-2); align-items: center;
   min-height: calc(var(--h-row) + var(--sp-2)); padding: var(--sp-1) var(--sp-2); cursor: pointer; background: var(--c-raised);
   border-bottom: var(--border) solid var(--c-line);
 }
@@ -399,7 +399,8 @@ input[type='color'] { height: var(--h-ctl); padding: 0; border: 0; border-radius
 .layer-grip { cursor: grab; touch-action: none; display: grid; place-items: center; }
 .layer-grip .ico { width: var(--icon-s); height: var(--icon-s); color: var(--c-text-faint); }
 .layer-thumb { width: var(--thumb-w); height: var(--thumb-h); object-fit: contain; background: var(--c-sunken); display: block; }
-.layer-name { font-size: var(--fs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* Only as wide as its text: a double click beside it (on the row) opens «Estilo de capa». */
+.layer-name { font-size: var(--fs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; justify-self: start; max-width: 100%; }
 .layer-name small { display: block; font: var(--fs-xs) var(--font-mono); color: var(--c-text-dim); }
 .layer-tog { all: unset; width: var(--h-ctl); height: var(--h-ctl); display: grid; place-items: center; border-radius: var(--radius); cursor: pointer; }
 .layer-tog:hover { background: var(--c-hover); }
@@ -777,4 +778,52 @@ body.cropping .view-hud { z-index: calc(var(--z-hud) + 2); }
   .crop-bar .hw-btn, .crop-bar select, .crop-bar input { min-height: var(--h-touch); }
   .crop-bar .hw-btn.icon { min-width: var(--h-touch); }
   .crop-size { display: none; }
+}
+
+/* ======================= layer styles (src/ui/styledialog.ts, layers list) ======================= */
+.layer-style-btn { color: var(--c-text-faint); }
+.layer-style-btn.on { color: var(--c-accent); }
+.layer-fx { grid-column: 1 / -1; display: flex; flex-direction: column; padding-left: calc(var(--h-ctl) + var(--sp-2)); font-size: var(--fs-s, 11px); }
+.layer-fx.off .layer-fx-items, .layer-fx.off .layer-fx-fold { opacity: 0.5; }
+.layer-fx-head { display: flex; align-items: center; gap: var(--sp-2); }
+.layer-fx-fold, .layer-fx-name { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--c-text-dim); padding: 0 var(--sp-2); min-height: var(--h-ctl); }
+.layer-fx-fold:hover, .layer-fx-name:hover { color: var(--c-text); }
+.layer-fx-fold:focus-visible, .layer-fx-name:focus-visible { outline: var(--sp-1) solid var(--c-accent); }
+.layer-fx-fold .ico { width: var(--icon-s); height: var(--icon-s); }
+.layer-fx-fold .ico.folded { transform: rotate(-90deg); }
+.layer-fx-items { list-style: none; margin: 0; padding: 0 0 0 calc(var(--h-ctl) + var(--sp-2)); }
+.layer-fx-item { display: flex; align-items: center; gap: var(--sp-2); }
+.layer-fx-item.off .layer-fx-name { text-decoration: line-through; opacity: 0.6; }
+
+.win-style { width: min(calc(var(--sp-7) * 30), 100%); }
+.st { gap: var(--sp-5); overflow: hidden; }
+/* The settings scroll; the footer (Aceptar / Cancelar) always stays visible below them. */
+.st-grid { display: grid; grid-template-columns: calc(var(--sp-7) * 8) minmax(0, 1fr); gap: var(--sp-6); min-height: 0; flex: 1 1 auto; overflow: auto; }
+.st-foot { flex: none; }
+.st-list { display: flex; flex-direction: column; gap: var(--sp-4); }
+.st-preset { display: flex; flex-direction: column; gap: var(--sp-2); color: var(--c-text-dim); }
+.st-items { display: flex; flex-direction: column; border: var(--border) solid var(--c-line); }
+.st-item { display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-3); min-height: var(--h-row); }
+.st-item.sel { background: var(--c-selected); }
+.st-name { all: unset; flex: 1; cursor: pointer; padding: var(--sp-2) 0; }
+.st-name:focus-visible { outline: var(--sp-1) solid var(--c-accent); }
+.st-settings { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+.st-settings h3 { margin: 0; font-size: var(--fs); }
+.st-field { display: grid; grid-template-columns: var(--sl-label-w) minmax(0, 1fr); align-items: center; gap: var(--sp-4); }
+.st-field span { color: var(--c-text-dim); }
+.st-field input[type='color'] { width: calc(var(--sp-7) * 2); height: var(--h-ctl); padding: 0; border: 0; background: none; }
+.st-chk { display: inline-flex; align-items: center; gap: var(--sp-3); }
+.st-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4) var(--sp-5); border-top: var(--border) solid var(--c-line); padding-top: var(--sp-5); }
+.st-scale { display: inline-flex; align-items: center; gap: var(--sp-3); }
+.st-scale input { width: calc(var(--sp-7) * 2.2); }
+.st-end { margin-left: auto; display: inline-flex; gap: var(--sp-3); }
+@media (max-width: 768px) {
+  /* The dialog becomes a bottom sheet. */
+  .win-backdrop:has(.win-style) { place-items: end stretch; padding: 0; }
+  .win-style { width: 100%; max-height: 85dvh; border-top-left-radius: var(--radius); border-top-right-radius: var(--radius); }
+  .st-grid { grid-template-columns: 1fr; }
+  .st-items { flex-direction: row; flex-wrap: wrap; }
+  .st-item { flex: 1 1 45%; min-height: var(--h-touch); }
+  .st-foot .hw-btn, .st-foot input { min-height: var(--h-touch); }
+  .layer-style-btn, .layer-fx .layer-tog { min-width: var(--h-touch); min-height: var(--h-touch); }
 }

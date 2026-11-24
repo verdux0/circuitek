@@ -28,6 +28,7 @@ import {
 import type { TextProps } from '../text';
 import { addIco, ico } from './icons';
 import { layerHasFx } from '../gl/renderer';
+import { EFFECTS, addedEffects, type EffectKey } from '../layerstyle';
 
 type Phase = 'live' | 'end' | 'once';
 export interface LayersHost {
@@ -58,6 +59,8 @@ export interface LayersHost {
   pickFontFile(): void;
   /** Menu of a layer row (⋯ button or right click), at a screen point. */
   rowMenu(id: string, clientX: number, clientY: number): void;
+  /** «Estilo de capa» dialog for a layer (optionally on one effect). */
+  openStyle(id: string, focus?: EffectKey): void;
   /** Shows the effects panel (bottom row «fx» button). */
   showEffects(): void;
 }
@@ -75,6 +78,8 @@ export class LayersPanel {
   private thumbs = new Map<string, string>();
   /** Id of the layer whose name is being edited inline (the list is not rebuilt meanwhile). */
   private renaming: string | null = null;
+  /** Layers whose effects list (under the row) is folded (view state, not part of the document). */
+  private folded = new Set<string>();
 
   constructor(private host: LayersHost) {
     this.el.className = 'layers';
@@ -132,9 +137,13 @@ export class LayersPanel {
       this.host.rowMenu(row.dataset.id!, e.clientX, e.clientY);
     });
     this.el.addEventListener('dblclick', (e) => {
-      const name = (e.target as HTMLElement).closest('.layer-name');
-      const row = name?.closest<HTMLElement>('.layer-row');
-      if (row) this.startRename(row.dataset.id!);
+      const t = e.target as HTMLElement;
+      const row = t.closest<HTMLElement>('.layer-row');
+      if (!row) return;
+      if (t.closest('.layer-name')) return this.startRename(row.dataset.id!);
+      // Outside the name, the thumbnail and the buttons: «Estilo de capa» (as in Photoshop).
+      if (t.closest('button, .layer-thumb, .layer-grip, .layer-fx, input')) return;
+      this.host.openStyle(row.dataset.id!);
     });
   }
 
@@ -161,6 +170,7 @@ export class LayersPanel {
       return;
     }
     if (btn?.dataset.rowAct === 'delete' && row) return this.deleteLayer(row.dataset.id!);
+    if (btn && row && this.styleAction(btn, row.dataset.id!)) return;
     if (btn?.dataset.rowAct && row) {
       const id = row.dataset.id!;
       const key = btn.dataset.rowAct === 'eye' ? 'visible' : 'locked';
@@ -383,12 +393,60 @@ export class LayersPanel {
     return url;
   }
 
+  /** Buttons of the layer-style part of a row. Returns true if handled. */
+  private styleAction(btn: HTMLElement, id: string): boolean {
+    const act = btn.dataset.rowAct;
+    const fx = btn.dataset.fx as EffectKey | undefined;
+    if (act === 'style') this.host.openStyle(id);
+    else if (act === 'fx-open' && fx) this.host.openStyle(id, fx);
+    else if (act === 'fx-fold') {
+      if (this.folded.has(id)) this.folded.delete(id);
+      else this.folded.add(id);
+      this.structKey = '';
+      this.sync();
+    } else if (act === 'fx-all' || (act === 'fx-eye' && fx)) {
+      this.host.editDoc((d) => {
+        const st = getLayer(d, id)?.style;
+        if (!st) return;
+        if (act === 'fx-all') st.enabled = !st.enabled;
+        else st[fx!].hidden = !st[fx!].hidden;
+      }, 'once');
+    } else return false;
+    return true;
+  }
+
+  /** The effects of a layer's style, under its row: «Efectos» (eye = all) and one row per effect. */
+  private fxList(l: Layer): string {
+    const st = l.style;
+    const keys = addedEffects(st);
+    if (!st || !keys.length) return '';
+    const fold = this.folded.has(l.id);
+    const items = keys
+      .map((k) => {
+        const e = EFFECTS.find((x) => x.key === k)!;
+        const shown = !st[k].hidden;
+        return `<li class="layer-fx-item${shown ? '' : ' off'}">
+          <button class="layer-tog" data-row-act="fx-eye" data-fx="${k}" aria-pressed="${shown}" aria-label="${shown ? 'Ocultar' : 'Mostrar'} ${e.label}" title="${shown ? 'Ocultar' : 'Mostrar'} el efecto">${ico(shown ? 'eye' : 'eye-off')}</button>
+          <button class="layer-fx-name" data-row-act="fx-open" data-fx="${k}" title="Editar ${e.label}">${e.label}</button>
+        </li>`;
+      })
+      .join('');
+    return `<div class="layer-fx${st.enabled ? '' : ' off'}">
+        <div class="layer-fx-head">
+          <button class="layer-tog" data-row-act="fx-all" aria-pressed="${st.enabled}" aria-label="${st.enabled ? 'Ocultar' : 'Mostrar'} todos los efectos de la capa" title="${st.enabled ? 'Ocultar' : 'Mostrar'} los efectos">${ico(st.enabled ? 'eye' : 'eye-off')}</button>
+          <button class="layer-fx-fold" data-row-act="fx-fold" aria-expanded="${!fold}" aria-label="${fold ? 'Desplegar' : 'Plegar'} la lista de efectos">${ico('chevron', fold ? 'folded' : '')} Efectos</button>
+        </div>
+        ${fold ? '' : `<ul class="layer-fx-items">${items}</ul>`}
+      </div>`;
+  }
+
   /** Re-renders the list when the structure changed and refreshes the property fields. */
   sync(): void {
     const d = this.host.doc();
     // The selection is not part of the key: selecting only moves a class, so the row under
     // the pointer survives a click (double click to rename, drag the grip right after).
-    const key = JSON.stringify(d.layers.map((l) => [l.id, l.src, l.name, l.visible, l.locked, l.blend, Math.round(l.opacity * 100), layerHasFx(l)]));
+    const fxKey = (l: Layer) => (l.style ? [l.style.enabled, addedEffects(l.style).map((k) => `${k}${l.style![k].hidden ? '-' : '+'}`), this.folded.has(l.id)] : null);
+    const key = JSON.stringify(d.layers.map((l) => [l.id, l.src, l.name, l.visible, l.locked, l.blend, Math.round(l.opacity * 100), layerHasFx(l), fxKey(l)]));
     this.el.classList.toggle('no-layers', d.layers.length === 0);
     this.propsEl.classList.toggle('no-layers', d.layers.length === 0);
     const n = d.layers.length;
@@ -403,9 +461,11 @@ export class LayersPanel {
           <button class="layer-tog${l.visible ? '' : ' off'}" data-row-act="eye" aria-label="${l.visible ? 'Ocultar' : 'Mostrar'} capa" title="${l.visible ? 'Ocultar' : 'Mostrar'}">${ico(l.visible ? 'eye' : 'eye-off')}</button>
           <img class="layer-thumb" src="${this.thumb(l.src)}" alt="" draggable="false">
           <span class="layer-name" title="Doble clic para renombrar (F2)">${layerHasFx(l) ? `<b class="fx-badge" title="Tiene efectos">${ico('fx')}</b>` : ''}${escapeHtml(l.name)}${l.blend !== 'source-over' || l.opacity < 1 ? `<small>${l.opacity < 1 ? Math.round(l.opacity * 100) + '%' : ''} ${l.blend !== 'source-over' ? BLENDS.find((b) => b[0] === l.blend)![1] : ''}</small>` : ''}</span>
+          <button class="layer-tog layer-style-btn${addedEffects(l.style).length ? ' on' : ''}" data-row-act="style" aria-label="Estilo de capa (sombra, resplandor…)" title="Estilo de capa: sombras y resplandores (o doble clic en la fila)">${ico('style')}</button>
           <button class="layer-tog${l.locked ? ' on' : ''}" data-row-act="lock" aria-label="${l.locked ? 'Desbloquear' : 'Bloquear'} capa" title="${l.locked ? 'Desbloquear' : 'Bloquear (no se mueve en el visor)'}">${ico(l.locked ? 'lock' : 'unlock')}</button>
           <button class="layer-tog" data-row-act="menu" aria-label="Menú de la capa" aria-haspopup="menu" title="Opciones de la capa (o clic derecho)">${ico('menu')}</button>
           <span class="layer-grip" title="Arrastra para reordenar" aria-hidden="true">${ico('grip')}</span>
+          ${this.fxList(l)}
         </li>`,
         )
         .join('');

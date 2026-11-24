@@ -4,7 +4,7 @@ import { BLENDS, layerMatrix, type DocState, type Layer } from '../doc';
 import { stateAtFrame } from '../motion';
 import { mixSeed } from '../prng';
 import {
-  CONTOURS, effectAngle, maskRadii, shadowOffset, styleActive, usesGlobalLight, type GlowFx, type InnerGlowFx, type ShadowFx,
+  CONTOURS, effectAngle, fxOn, maskRadii, shadowOffset, styleActive, usesGlobalLight, type GlowFx, type InnerGlowFx, type LayerStyle, type ShadowFx,
 } from '../layerstyle';
 
 /**
@@ -66,7 +66,14 @@ interface CacheEntry extends Target {
   /** Animated preview + encoder: GPU frames go here; the encoder reads them; `tex` keeps the last encoded frame. */
   side?: Target;
   /** Outer effects of the layer style (bottom → top), after the layer's glitch passes, with their blend mode. */
-  outer?: { t: Target; blend: number }[];
+  outer?: { t: Target; blend: number; borrowed?: boolean }[];
+  /**
+   * The style's own result BEFORE the glitch: the layer with its inner effects (null = no inner
+   * effect, the plain layer is used) and each outer effect. It depends on the layer's pixels,
+   * transform and style only — not on the animation frame — so an animated layer only re-runs its
+   * glitch passes on it every frame instead of rebuilding shadows and glows.
+   */
+  styled?: { key: string; content: Target | null; outer: { src: Target; blend: number }[] };
 }
 
 /** What the renderer needs from the app to draw a layer. */
@@ -442,7 +449,11 @@ export class GLRenderer {
     let e = this.caches.get(id);
     if (e && (e.w !== job.w || e.h !== job.h)) {
       if (e.side) this.freeTarget(e.side);
-      for (const o of e.outer ?? []) this.freeTarget(o.t);
+      for (const o of e.outer ?? []) if (!o.borrowed) this.freeTarget(o.t);
+      if (e.styled) {
+        if (e.styled.content) this.freeTarget(e.styled.content);
+        for (const o of e.styled.outer) this.freeTarget(o.src);
+      }
       this.freeTarget(e);
       this.caches.delete(id);
       e = undefined;
@@ -493,40 +504,83 @@ export class GLRenderer {
     const passes = buildGpuPasses(fx);
     const st = styleActive(l.style) ? l.style : null;
     if (!st) {
-      for (const o of e.outer ?? []) this.freeTarget(o.t);
+      for (const o of e.outer ?? []) if (!o.borrowed) this.freeTarget(o.t);
       e.outer = undefined;
+      this.dropStyled(e);
       this.runPasses(passes, set.tmp.tex, out, set);
       return;
     }
-    const w = this.fxTargets(set);
+    const sc = this.styled(l, ref, job, set, st, e);
+    this.runPasses(passes, sc.content?.tex ?? set.tmp.tex, out, set);
+    // Outer effects get the same glitch passes as the layer, into their own textures. Without
+    // passes (a layer with no glitch, e.g. a text with a shadow) that would be a plain copy: the
+    // compositor reads the style's own textures instead (borrowed, never freed from here).
+    const old = (e.outer ?? []).filter((o) => !o.borrowed);
+    if (!passes.length) {
+      for (const o of old) this.freeTarget(o.t);
+      e.outer = sc.outer.map((o) => ({ t: o.src, blend: o.blend, borrowed: true }));
+      return;
+    }
+    for (const o of old.slice(sc.outer.length)) this.freeTarget(o.t);
+    e.outer = sc.outer.map((o, i) => {
+      const t = old[i]?.t ?? this.emptyTarget(e.w, e.h);
+      this.runPasses(passes, o.src.tex, t.fb, set);
+      return { t, blend: o.blend };
+    });
+  }
+
+  private dropStyled(e: CacheEntry): void {
+    if (!e.styled) return;
+    if (e.styled.content) this.freeTarget(e.styled.content);
+    for (const o of e.styled.outer) this.freeTarget(o.src);
+    e.styled = undefined;
+  }
+
+  /** The style's result before the glitch (see CacheEntry.styled), rebuilt only when its inputs change. */
+  private styled(l: Layer, ref: SourceRef, job: RenderJob, set: TargetSet, st: LayerStyle, e: CacheEntry): NonNullable<CacheEntry['styled']> {
+    const light = usesGlobalLight(st) ? (job.doc.light?.angle ?? null) : null;
     const seed = l.fx?.seed ?? 0;
+    const key = JSON.stringify([ref.key, ref.frame ?? null, ref.stamp ?? null, l.w, l.h, l.x, l.y, l.scaleX, l.scaleY, l.rotation, l.flipX, l.flipY, st, light, seed, job.w, job.h, job.doc.w, job.doc.h]);
+    if (e.styled?.key === key) return e.styled;
+    this.fxStats.builds++;
+    const w = this.fxTargets(set);
+    const prev = e.styled;
     // Inner effects, front to back as in the dialog's list: inner glow first, inner shadow on top.
     let content = set.tmp.tex;
     let next = w.c1;
-    if (st.innerGlow.on) {
+    let inner = false;
+    if (fxOn(st.innerGlow)) {
       this.buildEffect('innerGlow', st.innerGlow, job, set, w, mixSeed(seed, 0x51));
       this.mergeInner(content, w.e.tex, next, BLEND_INDEX.get(st.innerGlow.blend) ?? 0, set);
       content = next.tex;
       next = next === w.c1 ? w.c2 : w.c1;
+      inner = true;
     }
-    if (st.innerShadow.on) {
+    if (fxOn(st.innerShadow)) {
       this.buildEffect('innerShadow', st.innerShadow, job, set, w, mixSeed(seed, 0x52));
       this.mergeInner(content, w.e.tex, next, BLEND_INDEX.get(st.innerShadow.blend) ?? 0, set);
       content = next.tex;
+      inner = true;
     }
-    this.runPasses(passes, content, out, set);
+    let keep: Target | null = null;
+    if (inner) {
+      keep = prev?.content ?? this.emptyTarget(e.w, e.h);
+      this.runPasses([], content, keep.fb, set);
+    } else if (prev?.content) this.freeTarget(prev.content);
     // Outer effects, bottom → top: drop shadow, then outer glow.
-    const outer: { key: 'dropShadow' | 'outerGlow'; blend: number }[] = [];
-    if (st.dropShadow.on) outer.push({ key: 'dropShadow', blend: BLEND_INDEX.get(st.dropShadow.blend) ?? 0 });
-    if (st.outerGlow.on) outer.push({ key: 'outerGlow', blend: BLEND_INDEX.get(st.outerGlow.blend) ?? 0 });
-    const old = e.outer ?? [];
-    for (const o of old.slice(outer.length)) this.freeTarget(o.t);
-    e.outer = outer.map((o, i) => {
-      const t = old[i]?.t ?? this.emptyTarget(e.w, e.h);
-      this.buildEffect(o.key, st[o.key], job, set, w, mixSeed(seed, o.key === 'dropShadow' ? 0x53 : 0x54));
-      this.runPasses(passes, w.e.tex, t.fb, set);
-      return { t, blend: o.blend };
+    const kinds: ('dropShadow' | 'outerGlow')[] = [];
+    if (fxOn(st.dropShadow)) kinds.push('dropShadow');
+    if (fxOn(st.outerGlow)) kinds.push('outerGlow');
+    const olds = prev?.outer ?? [];
+    for (const o of olds.slice(kinds.length)) this.freeTarget(o.src);
+    const outer = kinds.map((k, i) => {
+      const src = olds[i]?.src ?? this.emptyTarget(e.w, e.h);
+      this.buildEffect(k, st[k], job, set, w, mixSeed(seed, k === 'dropShadow' ? 0x53 : 0x54));
+      this.runPasses([], w.e.tex, src.fb, set);
+      return { src, blend: BLEND_INDEX.get(st[k].blend) ?? 0 };
     });
+    e.styled = { key, content: keep, outer };
+    return e.styled;
   }
 
   private fxTargets(set: TargetSet): NonNullable<TargetSet['fx']> {
@@ -663,6 +717,9 @@ export class GLRenderer {
     this.onAsync();
   }
 
+  /** Layer styles rebuilt (shadows and glows recomputed), for the tests: animation frames must not rebuild them. */
+  readonly fxStats = { builds: 0 };
+
   /** Encoder stage cost (read-back + worker + upload) over the live renders: count and total ms. */
   readonly encStats = { n: 0, ms: 0 };
 
@@ -670,7 +727,11 @@ export class GLRenderer {
     const e = this.caches.get(id);
     if (!e) return;
     if (e.side) this.freeTarget(e.side);
-    for (const o of e.outer ?? []) this.freeTarget(o.t);
+    for (const o of e.outer ?? []) if (!o.borrowed) this.freeTarget(o.t);
+    if (e.styled) {
+      if (e.styled.content) this.freeTarget(e.styled.content);
+      for (const o of e.styled.outer) this.freeTarget(o.src);
+    }
     this.freeTarget(e);
     this.caches.delete(id);
   }
@@ -680,7 +741,7 @@ export class GLRenderer {
     const ids = new Set(doc.layers.filter((l) => l.fx).map((l) => l.id));
     for (const id of [...this.caches.keys()]) if (!ids.has(id.split('@')[0])) this.dropCache(id);
     for (const id of this.scratch.keys()) if (!ids.has(id)) this.scratch.delete(id);
-    const bytes = (e: CacheEntry) => e.w * e.h * 4 * (1 + (e.outer?.length ?? 0) + (e.side ? 1 : 0));
+    const bytes = (e: CacheEntry) => e.w * e.h * 4 * targetsOf(e);
     let total = [...this.caches.values()].reduce((a, e) => a + bytes(e), 0);
     const lru = [...this.caches.entries()].filter(([id, e]) => e.used < usedNow && !e.encBusy && !(this.finals > 0 && id.endsWith('F'))).sort((a, b) => a[1].used - b[1].used);
     while (total > this.cacheBudget && lru.length) {
@@ -798,7 +859,7 @@ export class GLRenderer {
 
   /** GPU memory held by caches and sources (approximate, bytes). */
   get memory(): { caches: number; sources: number; work: number } {
-    const caches = [...this.caches.values()].reduce((a, e) => a + e.w * e.h * 4 * (1 + (e.outer?.length ?? 0) + (e.side ? 1 : 0)), 0);
+    const caches = [...this.caches.values()].reduce((a, e) => a + e.w * e.h * 4 * targetsOf(e), 0);
     const sources = [...this.sources.values()].reduce((a, s) => a + s.bytes, 0);
     const work = [...this.sets.values()].reduce((a, s) => a + s.w * s.h * 4 * (s.fx ? 10 : 5), 0);
     return { caches, sources, work };
@@ -811,6 +872,11 @@ export class GLRenderer {
 }
 
 const rgb = (hex: string): [number, number, number] => hexRgb(hex);
+
+/** Textures a cache entry holds (for the memory budget). */
+function targetsOf(e: CacheEntry): number {
+  return 1 + (e.side ? 1 : 0) + (e.outer?.filter((o) => !o.borrowed).length ?? 0) + (e.styled ? (e.styled.content ? 1 : 0) + e.styled.outer.length : 0);
+}
 
 function hexRgb(hex: string): [number, number, number] {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);

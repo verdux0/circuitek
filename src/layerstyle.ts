@@ -18,7 +18,10 @@ export const CONTOURS: [Contour, string][] = [
 ];
 
 interface FxBase {
+  /** Added to the style (the checkbox in «Estilo de capa»). */
   on: boolean;
+  /** Hidden with its eye in the layers list (kept in the style, not drawn). */
+  hidden: boolean;
   blend: Blend;
   /** 0..100 */
   opacity: number;
@@ -92,21 +95,29 @@ export const DEFAULT_LIGHT = 120;
 export function defaultStyle(): LayerStyle {
   return {
     enabled: true,
-    dropShadow: { on: false, blend: 'multiply', color: '#000000', opacity: 75, angle: DEFAULT_LIGHT, useGlobal: true, distance: 5, spread: 0, size: 5, noise: 0, contour: 'linear', knockout: true },
-    outerGlow: { on: false, blend: 'screen', opacity: 75, noise: 0, contour: 'linear', fill: 'color', color: '#ffffbe', color2: '#ff2d78', technique: 'softer', spread: 0, size: 5, range: 50 },
-    innerShadow: { on: false, blend: 'multiply', color: '#000000', opacity: 75, angle: DEFAULT_LIGHT, useGlobal: true, distance: 5, spread: 0, size: 5, noise: 0, contour: 'linear' },
-    innerGlow: { on: false, blend: 'screen', opacity: 75, noise: 0, contour: 'linear', fill: 'color', color: '#ffffbe', color2: '#ff2d78', technique: 'softer', spread: 0, size: 5, range: 50, source: 'edge' },
+    dropShadow: { on: false, hidden: false, blend: 'multiply', color: '#000000', opacity: 75, angle: DEFAULT_LIGHT, useGlobal: true, distance: 5, spread: 0, size: 5, noise: 0, contour: 'linear', knockout: true },
+    outerGlow: { on: false, hidden: false, blend: 'screen', opacity: 75, noise: 0, contour: 'linear', fill: 'color', color: '#ffffbe', color2: '#ff2d78', technique: 'softer', spread: 0, size: 5, range: 50 },
+    innerShadow: { on: false, hidden: false, blend: 'multiply', color: '#000000', opacity: 75, angle: DEFAULT_LIGHT, useGlobal: true, distance: 5, spread: 0, size: 5, noise: 0, contour: 'linear' },
+    innerGlow: { on: false, hidden: false, blend: 'screen', opacity: 75, noise: 0, contour: 'linear', fill: 'color', color: '#ffffbe', color2: '#ff2d78', technique: 'softer', spread: 0, size: 5, range: 50, source: 'edge' },
   };
+}
+
+/** Is this effect drawn? (added and not hidden by its eye) */
+export const fxOn = (f: { on: boolean; hidden: boolean }): boolean => f.on && !f.hidden;
+
+/** Effects added to the style (shown under the layer, drawn or hidden). */
+export function addedEffects(s: LayerStyle | undefined): EffectKey[] {
+  return s ? EFFECTS.map((e) => e.key).filter((k) => s[k].on) : [];
 }
 
 /** Does the style draw anything? (no style, all off or hidden → the layer renders as before) */
 export function styleActive(s: LayerStyle | undefined): s is LayerStyle {
-  return !!s && s.enabled && (s.dropShadow.on || s.outerGlow.on || s.innerShadow.on || s.innerGlow.on);
+  return !!s && s.enabled && (fxOn(s.dropShadow) || fxOn(s.outerGlow) || fxOn(s.innerShadow) || fxOn(s.innerGlow));
 }
 
-/** Does any active effect follow the global light? (then the light angle is part of the layer's cache key) */
+/** Does any drawn effect follow the global light? (then the light angle is part of the layer's cache key) */
 export function usesGlobalLight(s: LayerStyle | undefined): boolean {
-  return styleActive(s) && ((s.dropShadow.on && s.dropShadow.useGlobal) || (s.innerShadow.on && s.innerShadow.useGlobal));
+  return styleActive(s) && ((fxOn(s.dropShadow) && s.dropShadow.useGlobal) || (fxOn(s.innerShadow) && s.innerShadow.useGlobal));
 }
 
 /** The angle an effect really uses. */
@@ -168,6 +179,7 @@ const CONTOUR_IDS = CONTOURS.map((c) => c[0]);
 function base<T extends FxBase>(o: Record<string, unknown>, d: T): FxBase {
   return {
     on: o.on === true,
+    hidden: o.hidden === true,
     blend: (BLEND_IDS.has(o.blend as string) ? o.blend : d.blend) as Blend,
     opacity: n(o.opacity, 0, 100, d.opacity),
     noise: n(o.noise, 0, 100, d.noise),
