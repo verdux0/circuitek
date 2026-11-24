@@ -1,7 +1,7 @@
 # Visión general de circuitek
 
 > Documento de la Fase 0 de la auditoría (2026-11-23, línea base `7714dc4`, rama
-> `refactor/auditoria-circuitec`). Los detalles de cada parte están en `docs/modulos/`. Los
+> `refactor/auditoria-circuitek`). Los detalles de cada parte están en `docs/modulos/`. Los
 > problemas están en `docs/_estado/HALLAZGOS.md`.
 
 ## Qué es

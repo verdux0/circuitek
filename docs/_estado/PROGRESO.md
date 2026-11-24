@@ -3,7 +3,7 @@
 **Estado:** detenida a petición del responsable (2026-11-24), a mitad de la Fase 1. **No se ha modificado código.**
 
 ## Hecho
-- Fase 0 completa: rama `refactor/auditoria-circuitec`, línea base (`tsc` OK, 143/143 tests, build OK, 0 vulnerabilidades), `docs/00-vision-general.md`.
+- Fase 0 completa: rama `refactor/auditoria-circuitek`, línea base (`tsc` OK, 143/143 tests, build OK, 0 vulnerabilidades), `docs/00-vision-general.md`.
 - Línea base en navegador: `tools/smoke_audit.py` (prueba de humo nueva), 12/14. Los 2 fallos son H-001 y H-002. La E2E del repositorio (`tools/verify.py`) está rota (H-032).
 - Fase 2 (registro): `docs/_estado/HALLAZGOS.md`, con 32 hallazgos (1 Alta de seguridad confirmada, 2 Altas de arquitectura / testing).
 - Fase 1 (parcial): documentos de módulo 01–05 en `docs/modulos/`.

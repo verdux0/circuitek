@@ -12,15 +12,15 @@ respuestas más seguras». En consecuencia:
   tareas marcadas como «seguras de automatizar»** en `docs/02-hoja-de-ruta.md`. Las que piden una
   decisión de arquitectura o de producto quedan **pospuestas** y documentadas para revisión.
 - Nada sale del equipo: no hay `git push`, ni PR, ni cambios en servicios externos. Los commits son
-  locales, en la rama `refactor/auditoria-circuitec`.
+  locales, en la rama `refactor/auditoria-circuitek`.
 - Cada cambio se verifica con `tsc --noEmit`, `vitest`, `vite build` y la prueba de humo en navegador
   antes de hacer commit. Si algo falla, se corrige o se revierte.
 
 ## D-002 · 2026-11-23 · Nombre del proyecto
 
-El encargo habla de «Circuitec». El repositorio se llama `glitch-editor` y la app `circuitek`
-(`package.json:2`). Se entiende que son el mismo proyecto. La rama usa el nombre pedido
-(`refactor/auditoria-circuitec`) y los documentos usan el nombre real, `circuitek`.
+El proyecto se llama **circuitek** (con k), como la app (`package.json:2`) y el repositorio
+remoto (`verdux0/circuitek`). La carpeta local se llama `glitch-editor`. La rama de la
+auditoría es `refactor/auditoria-circuitek` y todos los documentos usan `circuitek`.
 
 ## D-003 · 2026-11-23 · Línea base E2E sustituida por una prueba de humo
 

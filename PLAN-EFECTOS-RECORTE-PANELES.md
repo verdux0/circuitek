@@ -1,7 +1,7 @@
 # PLAN — paneles redimensionables, recorte y efectos de capa
 
 Encargo: `prompt-efectos-recorte-paneles.md`. Rama `feature/efectos-recorte-paneles`, que sale de
-`refactor/auditoria-circuitec` y por tanto incluye los arreglos de fuentes y de la búsqueda de GIF.
+`refactor/auditoria-circuitek` y por tanto incluye los arreglos de fuentes y de la búsqueda de GIF.
 Orden: paneles → recorte → efectos, con un commit por función.
 
 ## Lo que ya existe y se reutiliza
