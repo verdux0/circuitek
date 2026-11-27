@@ -1752,6 +1752,14 @@ window.addEventListener('keydown', (e) => {
     void saveProject(e.shiftKey);
     return;
   }
+  // Circuit clipboard: Ctrl+Alt+Shift+C / Ctrl+Alt+Shift+V on the selected layer.
+  if (mod && e.altKey && e.shiftKey && (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'v') && doc.active) {
+    e.preventDefault();
+    if (e.key.toLowerCase() === 'c') copyCircuit(doc.active);
+    else if (circuitClip) pasteCircuit(doc.active);
+    else toast('No hay ningún circuito clonado');
+    return;
+  }
   // Style clipboard: Ctrl+Alt+C / Ctrl+Alt+V on the selected layer.
   if (mod && e.altKey && (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'v') && doc.active) {
     e.preventDefault();
@@ -1857,11 +1865,11 @@ afterChange(true, true);
 
 /* ------------------------------ layer style clipboard ------------------------------ */
 /**
- * "Style" of a layer = its look, not its content: effects (cables, knobs, stages, seed),
- * opacity and blend mode. Copied from one layer and pasted onto others (undoable).
+ * "Style" of a layer = its layer style (shadows, glows), opacity and blend mode.
+ * The circuit-bending setup (cables, knobs, stages, seed, motion) travels apart with
+ * «Clonar circuito» / «Soldar circuito». Both are pasted onto other layers (undoable).
  */
 interface LayerLook {
-  fx: GlitchState;
   opacity: number;
   blend: Layer['blend'];
   /** Layer style (shadows, glows); undefined = the layer had none. */
@@ -1872,7 +1880,7 @@ let styleClip: LayerLook | null = null;
 function copyStyle(id: string): void {
   const l = getLayer(doc, id);
   if (!l) return;
-  styleClip = { fx: cloneState(l.fx ?? cleanFx()), opacity: l.opacity, blend: l.blend, style: l.style ? cloneStyle(l.style) : undefined, from: l.name };
+  styleClip = { opacity: l.opacity, blend: l.blend, style: l.style ? cloneStyle(l.style) : undefined, from: l.name };
   toast(`Estilo de «${l.name}» copiado`);
 }
 function pasteStyle(id: string): void {
@@ -1883,13 +1891,32 @@ function pasteStyle(id: string): void {
   editDoc((d) => {
     const x = getLayer(d, id);
     if (!x) return;
-    x.fx = cloneState(st.fx);
     x.opacity = st.opacity;
     x.blend = st.blend;
     if (st.style) x.style = cloneStyle(st.style);
     else delete x.style;
   }, 'once');
   toast(`Estilo de «${st.from}» pegado en «${l.name}»`);
+}
+
+/** Circuit clipboard: the whole circuit-bending setup of a layer (cables, knobs, stages, seed, motion). */
+let circuitClip: { fx: GlitchState; from: string } | null = null;
+function copyCircuit(id: string): void {
+  const l = getLayer(doc, id);
+  if (!l) return;
+  circuitClip = { fx: cloneState(l.fx ?? cleanFx()), from: l.name };
+  toast(`Circuito de «${l.name}» clonado`);
+}
+function pasteCircuit(id: string): void {
+  const c = circuitClip;
+  const l = getLayer(doc, id);
+  if (!c || !l) return;
+  if (l.locked) return toast('Capa bloqueada');
+  editDoc((d) => {
+    const x = getLayer(d, id);
+    if (x) x.fx = cloneState(c.fx);
+  }, 'once');
+  toast(`Circuito de «${c.from}» soldado en «${l.name}»`);
 }
 /* ---- «Estilo de capa» (layer styles: shadows and glows) ---- */
 const styleDialog = new StyleDialog({
@@ -1954,6 +1981,9 @@ function styleItems(id: string): MenuEntry[] {
     'sep',
     { label: 'Copiar estilo', icon: 'brush', keys: 'Ctrl+Alt+C', action: () => copyStyle(id) },
     { label: styleClip ? `Pegar estilo de «${styleClip.from.slice(0, 18)}»` : 'Pegar estilo', icon: 'paste', keys: 'Ctrl+Alt+V', disabled: !styleClip, action: () => pasteStyle(id) },
+    'sep',
+    { label: 'Clonar circuito', icon: 'circuit', keys: 'Ctrl+Alt+Shift+C', action: () => copyCircuit(id) },
+    { label: circuitClip ? `Soldar circuito de «${circuitClip.from.slice(0, 18)}»` : 'Soldar circuito', icon: 'paste', keys: 'Ctrl+Alt+Shift+V', disabled: !circuitClip, action: () => pasteCircuit(id) },
   ];
 }
 /** Menu of a row in the layers panel. */
@@ -2395,6 +2425,7 @@ Object.assign(window, {
     projects: () => projects.list(),
     currentProject: () => (project ? { ...project, dirty: snapJson() !== savedJson } : null),
     styleClip: () => (styleClip ? { ...styleClip } : null),
+    circuitClip: () => (circuitClip ? { ...circuitClip } : null),
     clearProjects: async () => {
       for (const p of await projects.list()) await projects.remove(p.id);
       project = null;

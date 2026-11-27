@@ -25,6 +25,7 @@ import {
   Dices,
   Ellipsis,
   Paintbrush,
+  CircuitBoard,
   Download,
   Eraser,
   Expand,
@@ -175,6 +176,7 @@ const LUCIDE: Record<string, IconNode> = {
   'file-up': FileUp,
   menu: Ellipsis,
   brush: Paintbrush,
+  circuit: CircuitBoard,
 };
 
 function render(node: IconNode): string {

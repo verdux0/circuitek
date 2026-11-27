@@ -53,7 +53,7 @@ npm run dev:phone      # servidor en la red local con HTTPS, para el móvil (ver
 | **SEED** + dado | todo el ruido depende de la seed: misma seed y mismos ajustes = misma imagen |
 | Presets | 6 de fábrica · **Guardar/Cargar** = archivo JSON |
 | Proyectos | clic = abrir · doble clic en el nombre = renombrar · ⬇ = PNG a resolución completa · archivo = exportar `.glitch` · papelera = eliminar (dos clics) |
-| Menú de la fila de capa | botón ⋯ o clic derecho en la fila: **copiar estilo** / **pegar estilo** (efectos, cables, knobs, etapas, seed, opacidad y fusión) para pasarlo a otra capa · también Ctrl+Alt+C / Ctrl+Alt+V |
+| Menú de la fila de capa | botón ⋯ o clic derecho en la fila: **copiar estilo** / **pegar estilo** (estilo de capa —sombras, brillos—, opacidad y fusión) · también Ctrl+Alt+C / Ctrl+Alt+V · **clonar circuito** / **soldar circuito** (todo el circuit bending: cables, knobs, etapas, seed y movimiento) para pasarlo a otra capa · también Ctrl+Alt+Shift+C / Ctrl+Alt+Shift+V |
 | Menú contextual | clic derecho sobre una capa del visor: girar 90° / 180° / enderezar, espejo, copiar, cortar, pegar, duplicar, renombrar, eliminar |
 | Atajos | Ctrl+Z / Ctrl+Shift+Z (o Ctrl+Y) · Ctrl+S guardar · Ctrl+Shift+S (o Espacio sin vídeo) = Capturar · Ctrl+C / Ctrl+X / Ctrl+V capas · F2 renombrar · I = importar · Esc = cerrar |
 | Vídeo / GIF | **Espacio** play/pausa · **,** / **.** fotograma anterior / siguiente · **M** silencio |
